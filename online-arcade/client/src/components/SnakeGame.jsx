@@ -5,10 +5,11 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 // --- CONFIGURATION ---
-const CANVAS_SIZE = 800; // Increased from 400 to 800 for Desktop
+const CANVAS_SIZE = 800; 
 const SCALE = 20;
 const SPEED = 60; 
-const SNAKE_START = [[20, 20], [20, 21]]; // Start in the middle (40x40 grid)
+const SNAKE_START = [[20, 20], [20, 21]]; 
+const CHOMP_COOLDOWN = 15000; // 15 Seconds in Milliseconds
 
 function SnakeGame() {
   const canvasRef = useRef();
@@ -16,14 +17,10 @@ function SnakeGame() {
   const { playSound } = useGameSounds('SnakeGame');
 
   // GAME STATES
-  // 'idle' = Waiting to start
-  // 'countdown' = 3..2..1
-  // 'playing' = Snake is moving
-  // 'gameover' = You died
   const [gameStatus, setGameStatus] = useState('idle');
   
   const [snake, setSnake] = useState(SNAKE_START);
-  const [food, setFood] = useState([10, 10]); // Initial food somewhere safe
+  const [food, setFood] = useState([10, 10]); 
   const [score, setScore] = useState(0);
   const [countdown, setCountdown] = useState(5);
 
@@ -35,6 +32,7 @@ function SnakeGame() {
   const requestRef = useRef();
   const lastTimeRef = useRef();
   const accumulatorRef = useRef(0);
+  const lastChompTimeRef = useRef(0); // <--- NEW: Track last eat sound time
 
   // LOGIC REFS
   const snakeRef = useRef(SNAKE_START);
@@ -99,7 +97,14 @@ function SnakeGame() {
     if (newHead[0] === foodRef.current[0] && newHead[1] === foodRef.current[1]) {
         scoreRef.current += 10;
         setScore(scoreRef.current);
-        playSound('chomp');
+        
+        // --- NEW SOUND LOGIC ---
+        const now = Date.now();
+        if (now - lastChompTimeRef.current > CHOMP_COOLDOWN) {
+            playSound('chomp');
+            lastChompTimeRef.current = now;
+        }
+        // -----------------------
         
         let newFood;
         do {
@@ -158,7 +163,6 @@ function SnakeGame() {
   // --- INPUTS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Allow buffering moves during countdown!
       const lastMove = moveQueue.current.length > 0 
         ? moveQueue.current[moveQueue.current.length - 1] 
         : currentDir.current;
@@ -170,7 +174,6 @@ function SnakeGame() {
       if (e.key === "ArrowLeft" && lastMove[0] !== 1) newDir = [-1, 0];
       if (e.key === "ArrowRight" && lastMove[0] !== -1) newDir = [1, 0];
 
-      // Prevent scrolling the page with arrows
       if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
           e.preventDefault();
       }
@@ -188,11 +191,10 @@ function SnakeGame() {
   const startGame = () => {
     setGameStatus('countdown');
     setCountdown(5);
-    // Reset Board
+    
     setSnake(SNAKE_START);
     snakeRef.current = SNAKE_START;
     
-    // Randomize initial food slightly so it's not always 10,10
     const startFood = [
         Math.floor(Math.random() * (CANVAS_SIZE / SCALE)),
         Math.floor(Math.random() * (CANVAS_SIZE / SCALE))
@@ -206,6 +208,7 @@ function SnakeGame() {
     scoreRef.current = 0;
     accumulatorRef.current = 0;
     lastTimeRef.current = null;
+    lastChompTimeRef.current = 0; // Reset sound cooldown on restart
   };
 
   const endGame = () => {
@@ -224,7 +227,6 @@ function SnakeGame() {
       <h2 style={{ marginBottom: '10px' }}>🐍 Snake 🐍</h2>
       <p style={{ marginBottom: '20px' }}>Player: <b>{username}</b> | Score: {score}</p>
       
-      {/* Game Container */}
       <div style={{ 
           position: 'relative', 
           width: `${CANVAS_SIZE}px`, 
@@ -242,18 +244,12 @@ function SnakeGame() {
           style={{ display: 'block' }} 
         />
 
-        {/* --- OVERLAYS --- */}
-        
-        {/* 1. START SCREEN */}
         {gameStatus === 'idle' && (
           <div style={overlayStyle}>
-            <button onClick={startGame} style={buttonStyle}>
-              Start Game ▶
-            </button>
+            <button onClick={startGame} style={buttonStyle}>Start Game ▶</button>
           </div>
         )}
 
-        {/* 2. COUNTDOWN */}
         {gameStatus === 'countdown' && (
           <div style={overlayStyle}>
             <div style={{
@@ -262,35 +258,23 @@ function SnakeGame() {
                 fontWeight: '800',
                 textShadow: '0 4px 10px rgba(0,0,0,0.5)',
                 animation: 'pulse 1s infinite'
-            }}>
-              {countdown}
-            </div>
+            }}>{countdown}</div>
             <p style={{ color: '#fff', marginTop: '10px', fontSize: '1.2rem' }}>Get Ready!</p>
           </div>
         )}
 
-        {/* 3. GAME OVER */}
         {gameStatus === 'gameover' && (
           <div style={overlayStyle}>
             <h3 style={{ color: 'white', fontSize: '2.5rem', margin: 0 }}>Game Over</h3>
             <p style={{ color: '#eee', fontSize: '1.2rem' }}>Final Score: {score}</p>
             <div style={{ marginTop: '20px' }}>
-              <button onClick={startGame} style={buttonStyle}>
-                Try Again ↺
-              </button>
-              <button 
-                onClick={() => navigate('/leaderboard')} 
-                style={{ ...buttonStyle, background: '#444', marginLeft: '10px' }}
-              >
-                🏆 Leaders
-              </button>
+              <button onClick={startGame} style={buttonStyle}>Try Again ↺</button>
+              <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#444', marginLeft: '10px' }}>🏆 Leaders</button>
             </div>
           </div>
         )}
-
       </div>
       
-      {/* Instructions */}
       <div style={{ marginTop: '20px', color: '#666' }}>
         <small>Use Arrow Keys to Move</small>
       </div>
@@ -298,7 +282,6 @@ function SnakeGame() {
   );
 }
 
-// -- STYLES --
 const overlayStyle = {
   position: 'absolute',
   top: 0,
