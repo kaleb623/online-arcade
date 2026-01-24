@@ -9,8 +9,9 @@ const SOUND_LIBRARY = {
       'crunch.mp3',
     ],
     bonk: [
-      'hit1.mp3',
-      'smash.mp3',
+      'bonk1.mp3',
+      'bonk2.mp3',
+      'bonk3.mp3'
     ]
   },
   // Future games can go here easily:
