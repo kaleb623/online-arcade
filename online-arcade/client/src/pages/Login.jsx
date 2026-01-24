@@ -15,18 +15,20 @@ function Login() {
     const endpoint = isRegistering ? '/api/register' : '/api/login';
 
     try {
-      constQH = await axios.post(`http://localhost:5000${endpoint}`, {
+      // FIX: Use a clear variable name like 'res' (response)
+      const res = await axios.post(`http://localhost:5000${endpoint}`, {
         username,
         password
       });
 
-      // Save user to browser storage so they stay logged in
-      localStorage.setItem('user', QH.data.username || QH.data.user.username);
+      // FIX: Use 'res' here too
+      localStorage.setItem('user', res.data.username || res.data.user.username);
       
-      alert(QH.data.message);
+      alert(res.data.message);
       navigate('/');
       window.location.reload(); 
     } catch (err) {
+      // This will now correctly show server errors if they happen
       setError(err.response?.data?.message || "An error occurred");
     }
   };

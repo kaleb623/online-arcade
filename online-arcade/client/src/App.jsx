@@ -1,8 +1,10 @@
+// client/src/App.jsx
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import Home from './pages/Home';
 import Leaderboard from './pages/Leaderboard';
 import Login from './pages/Login';
 import SnakeGame from './components/SnakeGame';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   const user = localStorage.getItem('user');
@@ -14,7 +16,15 @@ function App() {
 
   return (
     <Router>
-      <nav style={{ padding: '15px', background: '#222', color: 'white', display: 'flex', justifyContent: 'space-between' }}>
+      <nav style={{ 
+        padding: '15px', 
+        background: '#222', 
+        color: 'white', 
+        display: 'flex', 
+        justifyContent: 'space-between',
+        // --- REVERTED TO STATIC (Removed Sticky) ---
+        // This allows it to scroll away when the game loads
+      }}>
         <div>
           <Link to="/" style={{ color: 'white', marginRight: '15px', textDecoration: 'none' }}>🏠 Home</Link>
           <Link to="/leaderboard" style={{ color: 'white', textDecoration: 'none' }}>🏆 Leaderboard</Link>
@@ -32,7 +42,14 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/game/snake" element={<SnakeGame />} />
+        <Route 
+          path="/game/snake" 
+          element={
+            <ProtectedRoute>
+              <SnakeGame />
+            </ProtectedRoute>
+          } 
+        />
       </Routes>
     </Router>
   );
