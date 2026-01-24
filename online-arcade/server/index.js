@@ -36,6 +36,29 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// Login Route
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    // 1. Find user
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 2. Simple password check
+    if (user.password !== password) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    // 3. Success!
+    res.json({ message: "Login successful", username: user.username });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+});
+
 // --- NEW ROUTES BELOW ---
 
 // 1. Submit Score Route
