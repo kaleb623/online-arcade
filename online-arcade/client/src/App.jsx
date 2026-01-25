@@ -4,6 +4,7 @@ import Home from './pages/Home';
 import Leaderboard from './pages/Leaderboard';
 import Login from './pages/Login';
 import SnakeGame from './components/SnakeGame';
+import BreakoutGame from './components/BreakoutGame'; // <--- 1. IMPORT ADDED
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -22,8 +23,6 @@ function App() {
         color: 'white', 
         display: 'flex', 
         justifyContent: 'space-between',
-        // --- REVERTED TO STATIC (Removed Sticky) ---
-        // This allows it to scroll away when the game loads
       }}>
         <div>
           <Link to="/" style={{ color: 'white', marginRight: '15px', textDecoration: 'none' }}>🏠 Home</Link>
@@ -42,6 +41,8 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/login" element={<Login />} />
+        
+        {/* SNAKE ROUTE */}
         <Route 
           path="/game/snake" 
           element={
@@ -50,6 +51,17 @@ function App() {
             </ProtectedRoute>
           } 
         />
+
+        {/* --- 2. BREAKOUT ROUTE ADDED --- */}
+        <Route 
+          path="/game/breakout" 
+          element={
+            <ProtectedRoute>
+              <BreakoutGame />
+            </ProtectedRoute>
+          } 
+        />
+
       </Routes>
     </Router>
   );

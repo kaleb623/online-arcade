@@ -6,7 +6,8 @@ const SOUND_LIBRARY = {
     chomp: [
       'chomp1.mp3',
       'chomp2.mp3',
-      'chomp3.mp3'
+      'chomp3.mp3',
+      'chomp4.mp3'
     ],
     bonk: [
       'bonk1.mp3',
