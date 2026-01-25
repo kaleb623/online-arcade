@@ -154,6 +154,20 @@ function SnakeGame() {
     }
   }, [isMusicMuted, gameStatus]);
 
+  // --- CLEANUP ON UNMOUNT ---
+  useEffect(() => {
+    return () => {
+      // This runs immediately when you leave the page
+      if (musicRef.current) {
+        musicRef.current.pause();
+        musicRef.current.currentTime = 0; // Reset track to start
+      }
+      if (fadeIntervalRef.current) {
+        clearInterval(fadeIntervalRef.current);
+      }
+    };
+  }, []);
+
   // --- FADER ---
   const fadeAudioTo = (targetVolume, duration = 1000, onComplete) => {
     if (!musicRef.current) return;

@@ -1,3 +1,4 @@
+// client/src/hooks/useGameSounds.js
 import { useCallback } from 'react';
 
 // Organized by Game Name
@@ -15,8 +16,12 @@ const SOUND_LIBRARY = {
       'bonk3.mp3'
     ]
   },
-  // Future games can go here easily:
-  // Tetris: { rotate: [...], drop: [...] }
+  // --- ADDED BREAKOUT GAME HERE ---
+  BreakoutGame: {
+    loss: [
+      'loss1.mp3' 
+    ]
+  }
 };
 
 const useGameSounds = (gameName) => {

@@ -7,16 +7,19 @@ const Home = () => {
   return (
     <div style={{ textAlign: 'center', marginTop: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
       
-      <h1 style={{ 
-        fontSize: '4rem', 
-        color: '#fff', 
-        textShadow: '0 0 20px #0984e3',
-        marginBottom: '10px'
+    <div style={{ 
+        fontSize: '8rem', // Doubled size (was 4rem)
+        fontWeight: '900',
+        fontFamily: 'sans-serif', // Sans-serif for the logo to match the game header
+        letterSpacing: '-10px',   // Tight grouping
+        marginBottom: '10px',
+        textShadow: '0 0 30px rgba(0, 210, 211, 0.5)' // Global soft glow
       }}>
-        THE ARCADE
-      </h1>
+        <span style={{ color: '#4cd137' }}>G</span>
+        <span style={{ color: '#00d2d3' }}>G</span>
+      </div>
       <p style={{ color: '#b2bec3', fontSize: '1.2rem', marginBottom: '50px' }}>
-        WELCOME BACK, {username ? username.toUpperCase() : 'GUEST'}
+        Hi, {username ? username : 'GUEST'}
       </p>
 
       <div style={{ 
@@ -31,7 +34,7 @@ const Home = () => {
           <div style={cardStyle}>
             <div style={{ fontSize: '4rem' }}>🐍</div>
             <h2 style={{ color: '#2ecc71', margin: '10px 0' }}>SNAKE</h2>
-            <p style={{ color: '#fff' }}>The Classic. Eat the food.</p>
+            <p style={{ color: '#fff' }}>Snake but better</p>
             <div style={playButtonStyle}>PLAY NOW</div>
           </div>
         </Link>
@@ -41,7 +44,7 @@ const Home = () => {
           <div style={cardStyle}>
             <div style={{ fontSize: '4rem' }}>🧱</div>
             <h2 style={{ color: '#ff7675', margin: '10px 0' }}>BREAKOUT</h2>
-            <p style={{ color: '#fff' }}>Smash bricks. Don't miss.</p>
+            <p style={{ color: '#fff' }}>Bricked up</p>
             <div style={playButtonStyle}>PLAY NOW</div>
           </div>
         </Link>

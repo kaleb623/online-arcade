@@ -4,7 +4,32 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <title>Grey's Gameroom</title>
+    
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #111; /* Dark Arcade Black */
+        color: #fff;            /* Default White Text */
+        font-family: 'Courier New', Courier, monospace; /* Global Retro Font */
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Optional: Make scrollbars dark too */
+      ::-webkit-scrollbar {
+        width: 10px;
+        background: #111;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #333;
+        border-radius: 5px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+      }
+    </style>
+    
   </head>
   <body>
     <div id="root"></div>
