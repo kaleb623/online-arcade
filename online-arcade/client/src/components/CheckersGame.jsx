@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 
-const socket = io('http://localhost:5000');
+const socketUrl = import.meta.env.PROD ? '/' : import.meta.env.VITE_API_URL;
+const socket = io(socketUrl);
 
 // Initial Board Setup (0=Empty, 1=Red, 2=Black)
 const INITIAL_BOARD = [
