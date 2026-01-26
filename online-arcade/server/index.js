@@ -4,7 +4,7 @@ const cors = require('cors');
 const http = require('http'); 
 const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
-const path = require('path'); 
+const path = require('path'); // <--- CRITICAL: Must be here
 
 const app = express();
 app.use(express.json());
@@ -18,11 +18,13 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.log("❌ MongoDB Error:", err));
 
 // --- 2. MODELS ---
+// Keep this safety check in case model files are missing during dev
 let User, Score;
 try {
     User = require('./models/User');
     Score = require('./models/Score');
 } catch (e) {
+    // Fallback schemas if files are missing
     const userSchema = new mongoose.Schema({ username: String, password: String });
     User = mongoose.model('User', userSchema);
     const scoreSchema = new mongoose.Schema({ username: String, game: String, score: Number });
@@ -103,19 +105,14 @@ io.on('connection', (socket) => {
     });
 });
 
-// --- 5. THE CATCH-ALL (Fixes Direct Links) ---
-try {
-    // Serve the React files
-    app.use(express.static(path.join(__dirname, '../client/dist')));
+// --- 5. THE CATCH-ALL (NO TRY/CATCH) ---
+// This serves your React App. If it fails, we WANT it to crash so we know why.
+app.use(express.static(path.join(__dirname, '../client/dist')));
 
-    // If the server doesn't know the URL (like /game/checkers), send index.html
-    app.get('*', (req, res) => {
-        if(req.path.startsWith('/api')) return res.status(404);
-        res.sendFile(path.join(__dirname, '../client/dist/index.html'));
-    });
-} catch (e) {
-    console.log("Dev Mode: Not serving frontend.");
-}
+app.get('*', (req, res) => {
+    if(req.path.startsWith('/api')) return res.status(404);
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+});
 
 // --- 6. START SERVER ---
 const PORT = process.env.PORT || 5000;
