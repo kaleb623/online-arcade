@@ -49,6 +49,15 @@ const Home = () => {
           </div>
         </Link>
 
+        <Link to="/game/tetris" style={{ textDecoration: 'none' }}>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '4rem' }}>🧩</div>
+            <h2 style={{ color: '#a000f0', margin: '10px 0' }}>TETRIS</h2>
+            <p style={{ color: '#fff' }}>Stack 'em up.</p>
+            <div style={playButtonStyle}>PLAY NOW</div>
+          </div>
+        </Link>
+
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import Leaderboard from './pages/Leaderboard';
 import Login from './pages/Login';
 import SnakeGame from './components/SnakeGame';
 import BreakoutGame from './components/BreakoutGame'; 
+import TetrisGame from './components/TetrisGame';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -83,6 +84,15 @@ function App() {
           element={
             <ProtectedRoute>
               <BreakoutGame />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route 
+          path="/game/tetris" 
+          element={
+            <ProtectedRoute>
+              <TetrisGame />
             </ProtectedRoute>
           } 
         />

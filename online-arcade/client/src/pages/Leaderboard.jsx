@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom';
 
 const AVAILABLE_GAMES = [
   { id: 'snake', label: '🐍 SNAKE' },
-  { id: 'breakout', label: '🧱 BREAKOUT' }
+  { id: 'breakout', label: '🧱 BREAKOUT' },
+  { id: 'tetris', label: '🧩 TETRIS' }
 ];
 
 function Leaderboard() {
