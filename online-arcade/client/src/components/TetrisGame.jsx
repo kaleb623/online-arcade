@@ -1,45 +1,30 @@
 // client/src/components/TetrisGame.jsx
-import useGameSounds from '../hooks/useGameSounds'; 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 // --- CONFIGURATION ---
 const COLS = 10;
 const ROWS = 20;
-const BLOCK_SIZE = 30; // Bigger blocks for the arcade feel
+const BLOCK_SIZE = 30;
 const CANVAS_WIDTH = COLS * BLOCK_SIZE;
 const CANVAS_HEIGHT = ROWS * BLOCK_SIZE;
-const BASE_VOLUME = 0.4;
 
 // --- TETROMINO DEFINITIONS ---
 const TETROMINOS = {
-  I: { shape: [[1, 1, 1, 1]], color: '#00f0f0' }, // Cyan
-  J: { shape: [[1, 0, 0], [1, 1, 1]], color: '#0000f0' }, // Blue
-  L: { shape: [[0, 0, 1], [1, 1, 1]], color: '#f0a000' }, // Orange
-  O: { shape: [[1, 1], [1, 1]], color: '#f0f000' }, // Yellow
-  S: { shape: [[0, 1, 1], [1, 1, 0]], color: '#00f000' }, // Green
-  T: { shape: [[0, 1, 0], [1, 1, 1]], color: '#a000f0' }, // Purple
-  Z: { shape: [[1, 1, 0], [0, 1, 1]], color: '#f00000' }  // Red
+  I: { shape: [[1, 1, 1, 1]], color: '#00f0f0' },
+  J: { shape: [[1, 0, 0], [1, 1, 1]], color: '#0000f0' },
+  L: { shape: [[0, 0, 1], [1, 1, 1]], color: '#f0a000' },
+  O: { shape: [[1, 1], [1, 1]], color: '#f0f000' },
+  S: { shape: [[0, 1, 1], [1, 1, 0]], color: '#00f000' },
+  T: { shape: [[0, 1, 0], [1, 1, 1]], color: '#a000f0' },
+  Z: { shape: [[1, 1, 0], [0, 1, 1]], color: '#f00000' }
 };
 
-// --- MUSIC BRACKETS ---
-const MUSIC_STAGES = [
-  { limit: 1000, track: '/music/SnakeGame/stage1.mp3' }, 
-  { limit: 3000, track: '/music/SnakeGame/stage2.mp3' }, 
-  { limit: 6000, track: '/music/SnakeGame/stage3.mp3' }, 
-  { limit: 10000, track: '/music/SnakeGame/stage4.mp3' }, 
-  { limit: 20000, track: '/music/SnakeGame/stage5.mp3' }, 
-  { limit: 99999, track: '/music/SnakeGame/stage6.mp3' } 
-];
+// --- AUDIO HELPERS ---
+const AudioContextClass = (window.AudioContext || window.webkitAudioContext);
+const audioCtx = new AudioContextClass();
 
-const STAGE_COLORS = [
-  'rgba(0, 210, 211, 0.6)', 'rgba(255, 159, 67, 0.7)', 'rgba(255, 107, 107, 0.8)',
-  'rgba(238, 82, 83, 0.9)', 'rgba(214, 48, 49, 1.0)', 'rgba(150, 0, 0, 1.0)'
-];
-
-// --- 🎹 SYNTH AUDIO ENGINE ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const playSynth = (type, isMuted) => {
   if (isMuted || audioCtx.state === 'suspended') {
       if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -49,9 +34,8 @@ const playSynth = (type, isMuted) => {
   const gainNode = audioCtx.createGain();
   osc.connect(gainNode);
   gainNode.connect(audioCtx.destination);
-
   const now = audioCtx.currentTime;
-  
+
   if (type === 'move') {
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(200, now);
@@ -112,52 +96,41 @@ const SweatRain = () => {
   );
 };
 
-const getStageIndex = (score) => {
-    for (let i = 0; i < MUSIC_STAGES.length; i++) {
-        if (score < MUSIC_STAGES[i].limit) return i;
-    }
-    return MUSIC_STAGES.length - 1; 
-};
-
 function TetrisGame() {
   const canvasRef = useRef();
+  const nextCanvasRef = useRef(); 
   const navigate = useNavigate();
 
   const [gameStatus, setGameStatus] = useState('idle');
   const [score, setScore] = useState(0);
   const [countdown, setCountdown] = useState(3);
-  
-  const [isMusicMuted, setIsMusicMuted] = useState(() => localStorage.getItem('snake_music_muted') === 'true');
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
   
-  // Game State Refs
+  // Game State
   const gridRef = useRef(Array.from({ length: ROWS }, () => Array(COLS).fill(null)));
-  const pieceRef = useRef(null); // { shape, color, x, y }
+  const pieceRef = useRef(null); 
+  const nextPieceRef = useRef(null); 
+  
   const requestRef = useRef();
   const lastTimeRef = useRef(0);
   const dropCounterRef = useRef(0);
-  const dropIntervalRef = useRef(1000); // Start at 1sec drop speed
-
+  const dropIntervalRef = useRef(1000); 
   const scoreRef = useRef(0);
   const isSfxMutedRef = useRef(isSfxMuted); 
-  const musicRef = useRef(new Audio());
-  const currentStageIndexRef = useRef(-1); 
-  const fadeIntervalRef = useRef(null); 
   const isGameOverRef = useRef(false);
-  
+  const downKeyRef = useRef(false);
+
   const username = localStorage.getItem('user') || "Anonymous";
-  const currentStageIndex = getStageIndex(score);
-  const currentGlowColor = STAGE_COLORS[currentStageIndex];
 
   // --- HELPERS ---
   const createPiece = () => {
       const types = 'IJLOSTZ';
       const type = types[Math.floor(Math.random() * types.length)];
       const def = TETROMINOS[type];
-      // Center the piece
       return {
           shape: def.shape,
           color: def.color,
+          // Center the piece roughly
           x: Math.floor((COLS - def.shape[0].length) / 2),
           y: 0
       };
@@ -169,7 +142,6 @@ function TetrisGame() {
               if (piece.shape[y][x] !== 0) {
                   const newX = piece.x + x;
                   const newY = piece.y + y;
-                  // Check bounds and grid occupancy
                   if (newX < 0 || newX >= COLS || newY >= ROWS || (newY >= 0 && grid[newY][newX])) {
                       return true;
                   }
@@ -200,11 +172,10 @@ function TetrisGame() {
       const newGrid = grid.filter(row => {
           if (row.every(cell => cell !== null)) {
               linesCleared++;
-              return false; // Remove this row
+              return false; 
           }
           return true;
       });
-      // Add new empty rows at top
       while (newGrid.length < ROWS) {
           newGrid.unshift(Array(COLS).fill(null));
       }
@@ -217,11 +188,17 @@ function TetrisGame() {
       const deltaTime = time - lastTimeRef.current;
       lastTimeRef.current = time;
 
+      // Variable Speed (Soft Drop)
+      const currentSpeed = downKeyRef.current ? 50 : dropIntervalRef.current;
+
       dropCounterRef.current += deltaTime;
-      if (dropCounterRef.current > dropIntervalRef.current) {
+      if (dropCounterRef.current > currentSpeed) {
           drop();
       }
+      
       draw();
+      drawNext(); 
+      
       requestRef.current = requestAnimationFrame(update);
   };
 
@@ -229,28 +206,29 @@ function TetrisGame() {
       if(isGameOverRef.current) return;
       const p = pieceRef.current;
       p.y++;
+      
       if (collide(gridRef.current, p)) {
-          p.y--; // Move back up
-          // Lock piece
+          p.y--; // Move back up (lock position)
           gridRef.current = merge(gridRef.current, p);
           playSynth('drop', isSfxMutedRef.current);
           
-          // Check lines
           const { newGrid, linesCleared } = checkLines(gridRef.current);
           gridRef.current = newGrid;
           
           if (linesCleared > 0) {
               const points = [0, 100, 300, 500, 800];
-              scoreRef.current += points[linesCleared] * (currentStageIndex + 1); // Multiplier based on stage
+              scoreRef.current += points[linesCleared];
               setScore(scoreRef.current);
               playSynth('clear', isSfxMutedRef.current);
-              
-              // Speed up
               dropIntervalRef.current = Math.max(100, 1000 - (scoreRef.current / 5));
           }
 
-          // Spawn new
-          pieceRef.current = createPiece();
+          pieceRef.current = nextPieceRef.current; 
+          pieceRef.current.x = Math.floor((COLS - pieceRef.current.shape[0].length) / 2);
+          pieceRef.current.y = 0;
+          
+          nextPieceRef.current = createPiece(); 
+          
           if (collide(gridRef.current, pieceRef.current)) {
               isGameOverRef.current = true;
               endGame();
@@ -264,7 +242,7 @@ function TetrisGame() {
       const p = pieceRef.current;
       p.x += dir;
       if (collide(gridRef.current, p)) {
-          p.x -= dir; // Undo
+          p.x -= dir; 
       } else {
           playSynth('move', isSfxMutedRef.current);
       }
@@ -276,93 +254,108 @@ function TetrisGame() {
       const oldShape = p.shape;
       p.shape = rotate(p.shape);
       if (collide(gridRef.current, p)) {
-          p.shape = oldShape; // Undo
+          p.shape = oldShape; 
       } else {
           playSynth('rotate', isSfxMutedRef.current);
       }
   };
 
-  const playerDrop = () => {
+  const playerHardDrop = () => {
        if(isGameOverRef.current || gameStatus !== 'playing') return;
        const p = pieceRef.current;
        while (!collide(gridRef.current, p)) {
            p.y++;
        }
-       p.y--; // One step back
-       dropCounterRef.current = dropIntervalRef.current + 1; // Force lock next frame
+       p.y--; 
+       dropCounterRef.current = dropIntervalRef.current + 1; // Force lock immediately
   };
 
   // --- DRAWING ---
+  const drawBlock = (ctx, x, y, color, size = BLOCK_SIZE) => {
+      ctx.fillStyle = color;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = color;
+      ctx.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      ctx.shadowBlur = 0; 
+  };
+
   const draw = () => {
+      if(!canvasRef.current) return;
       const ctx = canvasRef.current.getContext('2d');
-      // Background
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Draw Grid blocks
       gridRef.current.forEach((row, y) => {
           row.forEach((color, x) => {
               if (color) drawBlock(ctx, x, y, color);
           });
       });
 
-      // Draw Active Piece
       if (pieceRef.current) {
           pieceRef.current.shape.forEach((row, y) => {
               row.forEach((value, x) => {
-                  if (value) {
-                      drawBlock(ctx, pieceRef.current.x + x, pieceRef.current.y + y, pieceRef.current.color);
-                  }
+                  if (value) drawBlock(ctx, pieceRef.current.x + x, pieceRef.current.y + y, pieceRef.current.color);
               });
           });
       }
   };
 
-  const drawBlock = (ctx, x, y, color) => {
-      ctx.fillStyle = color;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = color;
-      ctx.fillRect(x * BLOCK_SIZE + 1, y * BLOCK_SIZE + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
-      ctx.shadowBlur = 0; // Reset
+  const drawNext = () => {
+      if(!nextCanvasRef.current || !nextPieceRef.current) return;
+      const ctx = nextCanvasRef.current.getContext('2d');
+      const PREVIEW_SIZE = 25; 
+      
+      // Clear background
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 100, 100);
+
+      const piece = nextPieceRef.current;
+      // Center in 4x4 grid
+      const offsetX = (4 - piece.shape[0].length) / 2;
+      const offsetY = (4 - piece.shape.length) / 2;
+
+      piece.shape.forEach((row, y) => {
+          row.forEach((value, x) => {
+              if (value) {
+                  drawBlock(ctx, x + offsetX, y + offsetY, piece.color, PREVIEW_SIZE);
+              }
+          });
+      });
   };
 
-  // --- INIT & EVENTS ---
+  // --- EVENTS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
+        // Prevent scrolling
+        if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", "Space"].indexOf(e.code) > -1) e.preventDefault();
+        
+        if (gameStatus !== 'playing') return;
+
         if (e.key === "ArrowLeft") playerMove(-1);
         else if (e.key === "ArrowRight") playerMove(1);
-        else if (e.key === "ArrowUp") playerRotate();
-        else if (e.key === "ArrowDown") {
-             // Soft drop (speed up)
-             dropCounterRef.current += 100;
-        }
-        else if (e.code === "Space") playerDrop();
-        
-        if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", "Space"].indexOf(e.code) > -1) e.preventDefault();
+        // ADDED 'R' KEY SUPPORT HERE
+        else if (e.key === "ArrowUp" || e.key === "r" || e.key === "R") playerRotate();
+        else if (e.code === "Space") playerHardDrop();
+        else if (e.key === "ArrowDown") downKeyRef.current = true;
     };
+
+    const handleKeyUp = (e) => {
+        if (e.key === "ArrowDown") downKeyRef.current = false;
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+        window.removeEventListener("keydown", handleKeyDown);
+        window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [gameStatus]);
 
-  // --- AUDIO & SYNC (Reused from Breakout) ---
   useEffect(() => { isSfxMutedRef.current = isSfxMuted; localStorage.setItem('snake_sfx_muted', isSfxMuted); }, [isSfxMuted]);
-  useEffect(() => { 
-    localStorage.setItem('snake_music_muted', isMusicMuted);
-    if (musicRef.current) {
-        musicRef.current.muted = isMusicMuted;
-        if (!isMusicMuted && gameStatus === 'playing') musicRef.current.play().catch(e => {});
-    }
-  }, [isMusicMuted, gameStatus]);
   
   // Cleanup
   useEffect(() => {
-      return () => {
-          if (musicRef.current) {
-              musicRef.current.pause();
-              musicRef.current.currentTime = 0;
-          }
-          cancelAnimationFrame(requestRef.current);
-      };
+      return () => cancelAnimationFrame(requestRef.current);
   }, []);
 
   const startGame = () => {
@@ -372,10 +365,14 @@ function TetrisGame() {
       setScore(0);
       scoreRef.current = 0;
       gridRef.current = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      
       pieceRef.current = createPiece();
+      nextPieceRef.current = createPiece(); 
+      
       dropIntervalRef.current = 1000;
       isGameOverRef.current = false;
       draw();
+      drawNext();
   };
   
   const endGame = () => {
@@ -396,52 +393,80 @@ function TetrisGame() {
     }
   }, [gameStatus, countdown]);
 
+  // --- STYLES ---
   const overlayStyle = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 10 };
   const buttonStyle = { padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', background: '#0984e3', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', fontFamily: "'Courier New', Courier, monospace", boxShadow: '0 5px 0 #0056b3' };
-  const iconButtonStyle = { background: 'transparent', border: 'none', color: '#00cec9', fontSize: '1.5rem', cursor: 'pointer' };
   const countdownStyle = { fontSize: '10rem', color: '#ffeaa7', fontWeight: '800', textShadow: '0 0 20px rgba(255, 234, 167, 0.5)', animation: 'pulse 1s infinite' };
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', paddingBottom: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
       {score >= 2000 && <SweatRain />}
 
-      <div style={{ 
-        backgroundColor: '#2d3436', padding: '20px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
-        transition: 'box-shadow 0.8s, border-color 0.8s', boxShadow: `0 0 60px ${currentGlowColor}`, borderColor: '#636e72' 
-      }}>
-        {/* HEADER */}
-        <div style={{ backgroundColor: '#000', color: '#fff', padding: '10px 20px', marginBottom: '20px', borderRadius: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px solid #333', boxShadow: 'inset 0 0 10px rgba(0,255,255,0.1)' }}>
-          <div style={{ display: 'flex', fontSize: '2rem', fontWeight: '900', fontFamily: 'sans-serif', letterSpacing: '-4px', marginRight: '20px', textShadow: '0 0 5px rgba(255,255,255,0.2)' }}>
-              <span style={{ color: '#a000f0' }}>T</span><span style={{ color: '#00d2d3' }}>E</span><span style={{ color: '#f0f000' }}>T</span><span style={{ color: '#00f000' }}>R</span><span style={{ color: '#f00000' }}>I</span><span style={{ color: '#00f0f0' }}>S</span>
-          </div>
-          <div style={{ fontSize: '1.5rem' }}>SCORE: {String(score).padStart(4, '0')}</div>
-          <div style={{ display: 'flex', gap: '10px', marginLeft: '15px' }}>
-              <button onClick={() => setIsMusicMuted(!isMusicMuted)} style={iconButtonStyle}>{isMusicMuted ? '🔇' : '🎵'}</button>
-              <button onClick={() => setIsSfxMuted(!isSfxMuted)} style={iconButtonStyle}>{isSfxMuted ? '🔇' : '🔊'}</button>
+      {/* MAIN FLEX CONTAINER: GAME LEFT | SIDEBAR RIGHT */}
+      <div style={{ display: 'flex', gap: '20px' }}>
+        
+        {/* --- LEFT: GAME BOARD --- */}
+        <div style={{ 
+          backgroundColor: '#2d3436', padding: '20px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
+          boxShadow: '0 0 40px rgba(160, 0, 240, 0.4)', borderColor: '#636e72' 
+        }}>
+          <div style={{ position: 'relative', border: '10px solid #111', borderRadius: '4px' }}>
+            <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} style={{ display: 'block', backgroundColor: '#000' }} />
+            
+            {gameStatus === 'idle' && (
+              <div style={overlayStyle}><button onClick={startGame} style={buttonStyle}>INSERT COIN (START)</button></div>
+            )}
+            {gameStatus === 'countdown' && (
+              <div style={overlayStyle}><div style={countdownStyle}>{countdown}</div><p style={{ color: '#fff', fontSize: '1.5rem' }}>GET READY</p></div>
+            )}
+            {gameStatus === 'gameover' && (
+              <div style={overlayStyle}>
+                <h3 style={{ color: '#ff7675', fontSize: '3rem', margin: 0 }}>GAME OVER</h3>
+                <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
+                <div>
+                  <button onClick={startGame} style={buttonStyle}>RETRY</button>
+                  <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ position: 'relative', border: '10px solid #111', borderRadius: '4px' }}>
-          <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} style={{ display: 'block', backgroundColor: '#000' }} />
+        {/* --- RIGHT: SIDEBAR INFO --- */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '160px' }}>
           
-          {gameStatus === 'idle' && (
-            <div style={overlayStyle}><button onClick={startGame} style={buttonStyle}>INSERT COIN (START)</button></div>
-          )}
-          {gameStatus === 'countdown' && (
-            <div style={overlayStyle}><div style={countdownStyle}>{countdown}</div><p style={{ color: '#fff', fontSize: '1.5rem' }}>GET READY</p></div>
-          )}
-          {gameStatus === 'gameover' && (
-            <div style={overlayStyle}>
-              <h3 style={{ color: '#ff7675', fontSize: '3rem', margin: 0 }}>GAME OVER</h3>
-              <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
-              <div>
-                <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
-              </div>
-            </div>
-          )}
+          {/* GG LOGO BOX */}
+          <div style={{ backgroundColor: '#000', padding: '15px', borderRadius: '10px', border: '2px solid #333', textAlign: 'center', boxShadow: '0 0 10px rgba(160,0,240,0.2)' }}>
+             <div style={{ display: 'flex', justifyContent: 'center', fontWeight: '900', fontSize: '2rem', fontFamily: 'sans-serif', letterSpacing: '-4px' }}>
+                <span style={{ color: '#4cd137' }}>G</span><span style={{ color: '#00d2d3' }}>G</span>
+             </div>
+          </div>
+
+          {/* SCORE BOX */}
+          <div style={{ backgroundColor: '#2d3436', padding: '15px', borderRadius: '10px', border: '4px solid #636e72', color: '#fff' }}>
+             <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '5px' }}>SCORE</div>
+             <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{String(score).padStart(5, '0')}</div>
+          </div>
+
+          {/* NEXT PIECE BOX */}
+          <div style={{ backgroundColor: '#2d3436', padding: '15px', borderRadius: '10px', border: '4px solid #636e72', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+             <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '10px' }}>NEXT PIECE</div>
+             <div style={{ border: '4px solid #636e72', backgroundColor: '#000', padding: '5px', borderRadius: '4px' }}>
+                <canvas ref={nextCanvasRef} width="100" height="100" style={{ display: 'block' }} />
+             </div>
+          </div>
+
+          {/* AUDIO CONTROLS */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#2d3436', padding: '10px', borderRadius: '10px', border: '2px solid #333' }}>
+              <button onClick={() => setIsSfxMuted(!isSfxMuted)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>{isSfxMuted ? '🔇' : '🔊'}</button>
+          </div>
+          
+          <div style={{ color: '#636e72', fontSize: '0.7rem', textAlign: 'center', marginTop: '10px' }}>
+            ↑ OR 'R' TO ROTATE<br/>HOLD ↓ FOR SPEED<br/>SPACE TO DROP
+          </div>
+
         </div>
-        <div style={{ textAlign: 'center', color: '#b2bec3', marginTop: '10px', fontSize: '0.8rem' }}>ARROWS TO MOVE/ROTATE • SPACE TO DROP</div>
+
       </div>
     </div>
   );
