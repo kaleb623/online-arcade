@@ -15,29 +15,25 @@ function Login() {
     const endpoint = isRegistering ? '/api/register' : '/api/login';
 
     try {
-      // 1. Send the request
+      // 1. Send the request (Uses the 'username' STATE)
       const res = await axios.post(endpoint, { username, password });
 
-      // 2. DEBUGGING (Optional: Remove this later)
-      console.log("Server Response:", res.data);
+      // 2. EXTRACT DATA (renamed variable to avoid crash)
+      // We look for 'user' because that's what we put in server/index.js
+      const serverUser = res.data.user; 
+      const serverMessage = res.data.message;
 
-      // 3. EXTRACT DATA CORRECTLY
-      // The backend now sends: { status: 'ok', message: '...', user: 'kaleb' }
-      // We want just the 'user' string.
-      const username = res.data.user; 
-      const message = res.data.message;
-
-      // 4. Save to Storage (So App.jsx can read it)
-      localStorage.setItem('user', username);
+      // 3. Save to Storage
+      localStorage.setItem('user', serverUser);
       
-      // 5. Success!
-      alert(message); // Displays "Registration successful!" or "Welcome back!"
+      // 4. Success!
+      alert(serverMessage); 
       navigate('/');
       window.location.reload(); 
       
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.message || err.response?.data?.error || "An error occurred");
+      setError(err.response?.data?.message || "An error occurred");
     }
   };
 
