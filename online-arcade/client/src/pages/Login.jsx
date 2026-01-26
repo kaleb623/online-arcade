@@ -15,22 +15,29 @@ function Login() {
     const endpoint = isRegistering ? '/api/register' : '/api/login';
 
     try {
-      // FIX: Use a clear variable name like 'res' (response)
-      // NEW (Monolithic - Works on Vultr AND Laptop)
-      const res = await axios.post(endpoint, {
-        username,
-        password
-});
+      // 1. Send the request
+      const res = await axios.post(endpoint, { username, password });
 
-      // FIX: Use 'res' here too
-      localStorage.setItem('user', res.data.username || res.data.user.username);
+      // 2. DEBUGGING (Optional: Remove this later)
+      console.log("Server Response:", res.data);
+
+      // 3. EXTRACT DATA CORRECTLY
+      // The backend now sends: { status: 'ok', message: '...', user: 'kaleb' }
+      // We want just the 'user' string.
+      const username = res.data.user; 
+      const message = res.data.message;
+
+      // 4. Save to Storage (So App.jsx can read it)
+      localStorage.setItem('user', username);
       
-      alert(res.data.message);
+      // 5. Success!
+      alert(message); // Displays "Registration successful!" or "Welcome back!"
       navigate('/');
       window.location.reload(); 
+      
     } catch (err) {
-      // This will now correctly show server errors if they happen
-      setError(err.response?.data?.message || "An error occurred");
+      console.error(err);
+      setError(err.response?.data?.message || err.response?.data?.error || "An error occurred");
     }
   };
 

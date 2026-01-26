@@ -37,7 +37,12 @@ app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     try {
         const newUser = await User.create({ username, password });
-        res.json(newUser);
+        // FIX: Return a clear structure with 'user' (name) and 'message'
+        res.json({ 
+            status: 'ok', 
+            message: 'Registration successful!', 
+            user: newUser.username 
+        });
     } catch (err) {
         res.status(400).json({ error: "User exists" });
     }
@@ -45,9 +50,18 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const user = await User.findOne({ username, password });
-    if(user) res.json({ status: 'ok', user: user.username });
-    else res.status(400).json({ status: 'error', user: false });
+    const foundUser = await User.findOne({ username, password });
+    
+    if(foundUser) {
+        // FIX: Match the register structure
+        res.json({ 
+            status: 'ok', 
+            message: 'Welcome back!', 
+            user: foundUser.username 
+        });
+    } else {
+        res.status(400).json({ status: 'error', user: false });
+    }
 });
 
 app.post('/api/score', async (req, res) => {
