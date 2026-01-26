@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import SnakeGame from './components/SnakeGame';
 import BreakoutGame from './components/BreakoutGame'; 
 import TetrisGame from './components/TetrisGame';
+import CheckersGame from './components/CheckersGame'; // <--- Added Import
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -19,14 +20,13 @@ function App() {
   return (
     <Router>
       <nav style={{ 
-        padding: '15px 30px', // Added side padding for better spacing
-        background: '#111',   // Darker background to match the new body style
-        borderBottom: '1px solid #333', // Subtle separator
+        padding: '15px 30px', 
+        background: '#111',   
+        borderBottom: '1px solid #333', 
         color: 'white', 
         display: 'flex', 
         justifyContent: 'space-between',
-        alignItems: 'center', // Vertically center items
-        // ✨ MODERN FONT OVERRIDE ✨
+        alignItems: 'center', 
         fontFamily: 'Verdana, sans-serif',
         fontSize: '0.9rem',
         letterSpacing: '0.5px'
@@ -49,7 +49,7 @@ function App() {
                   borderRadius: '4px',
                   color: 'white',
                   cursor: 'pointer',
-                  fontFamily: 'Verdana, sans-serif', // Ensure button inherits
+                  fontFamily: 'Verdana, sans-serif', 
                   fontWeight: 'bold',
                   fontSize: '0.8rem'
                 }}
@@ -64,11 +64,12 @@ function App() {
       </nav>
 
       <Routes>
+        {/* --- MAIN PAGES --- */}
         <Route path="/" element={<Home />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/login" element={<Login />} />
         
-        {/* SNAKE ROUTE */}
+        {/* --- GAME ROUTES (GROUPED) --- */}
         <Route 
           path="/game/snake" 
           element={
@@ -78,7 +79,6 @@ function App() {
           } 
         />
 
-        {/* BREAKOUT ROUTE */}
         <Route 
           path="/game/breakout" 
           element={
@@ -93,6 +93,15 @@ function App() {
           element={
             <ProtectedRoute>
               <TetrisGame />
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/game/checkers" 
+          element={
+            <ProtectedRoute>
+              <CheckersGame />
             </ProtectedRoute>
           } 
         />

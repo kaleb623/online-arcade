@@ -7,13 +7,14 @@ const Home = () => {
   return (
     <div style={{ textAlign: 'center', marginTop: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
       
-    <div style={{ 
-        fontSize: '8rem', // Doubled size (was 4rem)
+      {/* HEADER */}
+      <div style={{ 
+        fontSize: '8rem', 
         fontWeight: '900',
-        fontFamily: 'sans-serif', // Sans-serif for the logo to match the game header
-        letterSpacing: '-10px',   // Tight grouping
+        fontFamily: 'sans-serif', 
+        letterSpacing: '-10px',   
         marginBottom: '10px',
-        textShadow: '0 0 30px rgba(0, 210, 211, 0.5)' // Global soft glow
+        textShadow: '0 0 30px rgba(0, 210, 211, 0.5)' 
       }}>
         <span style={{ color: '#4cd137' }}>G</span>
         <span style={{ color: '#00d2d3' }}>G</span>
@@ -22,14 +23,14 @@ const Home = () => {
         Hi, {username ? username : 'GUEST'}
       </p>
 
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        gap: '40px', 
-        flexWrap: 'wrap' 
-      }}>
+      {/* --- SINGLE PLAYER SECTION --- */}
+      <h2 style={{ color: '#b2bec3', borderBottom: '2px solid #636e72', width: '80%', margin: '0 auto 30px auto', paddingBottom: '10px', letterSpacing: '2px' }}>
+        SINGLE PLAYER
+      </h2>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', marginBottom: '60px' }}>
         
-        {/* --- SNAKE CARD --- */}
+        {/* SNAKE */}
         <Link to="/game/snake" style={{ textDecoration: 'none' }}>
           <div style={cardStyle}>
             <div style={{ fontSize: '4rem' }}>🐍</div>
@@ -39,7 +40,7 @@ const Home = () => {
           </div>
         </Link>
 
-        {/* --- BREAKOUT CARD --- */}
+        {/* BREAKOUT */}
         <Link to="/game/breakout" style={{ textDecoration: 'none' }}>
           <div style={cardStyle}>
             <div style={{ fontSize: '4rem' }}>🧱</div>
@@ -49,11 +50,30 @@ const Home = () => {
           </div>
         </Link>
 
+        {/* TETRIS */}
         <Link to="/game/tetris" style={{ textDecoration: 'none' }}>
           <div style={cardStyle}>
             <div style={{ fontSize: '4rem' }}>🧩</div>
             <h2 style={{ color: '#a000f0', margin: '10px 0' }}>TETRIS</h2>
             <p style={{ color: '#fff' }}>Stack 'em up.</p>
+            <div style={playButtonStyle}>PLAY NOW</div>
+          </div>
+        </Link>
+      </div>
+
+      {/* --- MULTIPLAYER SECTION --- */}
+      <h2 style={{ color: '#b2bec3', borderBottom: '2px solid #636e72', width: '80%', margin: '0 auto 30px auto', paddingBottom: '10px', letterSpacing: '2px' }}>
+        MULTIPLAYER
+      </h2>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', marginBottom: '50px' }}>
+        
+        {/* CHECKERS */}
+        <Link to="/game/checkers" style={{ textDecoration: 'none' }}>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '4rem' }}>🔴</div>
+            <h2 style={{ color: '#e17055', margin: '10px 0' }}>CHECKERS</h2>
+            <p style={{ color: '#fff' }}>1v1 Strategy</p>
             <div style={playButtonStyle}>PLAY NOW</div>
           </div>
         </Link>
