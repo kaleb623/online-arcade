@@ -4,7 +4,7 @@ const cors = require('cors');
 const http = require('http'); 
 const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
-const path = require('path'); // <--- IMPORTANT
+const path = require('path'); 
 
 const app = express();
 app.use(express.json());
@@ -12,6 +12,7 @@ app.use(cors());
 
 // --- 1. DATABASE CONNECTION ---
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/online-arcade';
+
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log("❌ MongoDB Error:", err));
@@ -102,19 +103,14 @@ io.on('connection', (socket) => {
     });
 });
 
-// --- 5. THE MONOLITH BLOCK (Fixes Direct Links) ---
+// --- 5. THE CATCH-ALL (Fixes Direct Links) ---
 try {
-    // A. Serve the static React files
+    // Serve the React files
     app.use(express.static(path.join(__dirname, '../client/dist')));
 
-    // B. The "Catch-All" Route
-    // If the user requests "/game/checkers", the server says:
-    // "I don't know that file, so here is index.html. React will figure it out."
+    // If the server doesn't know the URL (like /game/checkers), send index.html
     app.get('*', (req, res) => {
-        // Don't intercept API calls
         if(req.path.startsWith('/api')) return res.status(404);
-        
-        // Serve the HTML file for everything else
         res.sendFile(path.join(__dirname, '../client/dist/index.html'));
     });
 } catch (e) {
