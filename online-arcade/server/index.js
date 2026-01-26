@@ -4,28 +4,24 @@ const cors = require('cors');
 const http = require('http'); 
 const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
-const path = require('path'); 
+const path = require('path'); // <--- IMPORTANT
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
 // --- 1. DATABASE CONNECTION ---
-// Works with a cloud URI (if you have one) or defaults to local
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/online-arcade';
-
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log("❌ MongoDB Error:", err));
 
 // --- 2. MODELS ---
-// We try to import your models, or define them here if files are missing
 let User, Score;
 try {
     User = require('./models/User');
     Score = require('./models/Score');
 } catch (e) {
-    // Fallback Schemas
     const userSchema = new mongoose.Schema({ username: String, password: String });
     User = mongoose.model('User', userSchema);
     const scoreSchema = new mongoose.Schema({ username: String, game: String, score: Number });
@@ -37,7 +33,6 @@ app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     try {
         const newUser = await User.create({ username, password });
-        // FIX: Return a clear structure with 'user' (name) and 'message'
         res.json({ 
             status: 'ok', 
             message: 'Registration successful!', 
@@ -51,9 +46,7 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const foundUser = await User.findOne({ username, password });
-    
     if(foundUser) {
-        // FIX: Match the register structure
         res.json({ 
             status: 'ok', 
             message: 'Welcome back!', 
@@ -97,7 +90,6 @@ io.on('connection', (socket) => {
         if (room && room.size === 1) {
             socket.join(roomCode);
             const [hostId] = room;
-            // Notify both players
             io.to(hostId).emit('game_start', { color: 'red', room: roomCode, opponent: socket.id }); 
             io.to(socket.id).emit('game_start', { color: 'black', room: roomCode, opponent: hostId }); 
         } else {
@@ -110,15 +102,19 @@ io.on('connection', (socket) => {
     });
 });
 
-// --- 5. SERVE FRONTEND (THE MONOLITH BLOCK) ---
-// This serves the React files if the user isn't asking for an API
+// --- 5. THE MONOLITH BLOCK (Fixes Direct Links) ---
 try {
+    // A. Serve the static React files
     app.use(express.static(path.join(__dirname, '../client/dist')));
-    
-    // Catch-all route: Send React's index.html
+
+    // B. The "Catch-All" Route
+    // If the user requests "/game/checkers", the server says:
+    // "I don't know that file, so here is index.html. React will figure it out."
     app.get('*', (req, res) => {
-        // Safety check: Don't return HTML for API calls
+        // Don't intercept API calls
         if(req.path.startsWith('/api')) return res.status(404);
+        
+        // Serve the HTML file for everything else
         res.sendFile(path.join(__dirname, '../client/dist/index.html'));
     });
 } catch (e) {

@@ -9,7 +9,7 @@ function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     const endpoint = isRegistering ? '/api/register' : '/api/login';
