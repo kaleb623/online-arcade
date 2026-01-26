@@ -116,11 +116,35 @@ function CheckersGame() {
     }
   }, [searchParams, navigate]);
 
-  const copyInviteLink = () => {
+ const copyInviteLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
-    navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    
+    // Check if modern Clipboard API is available
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inviteUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    } else {
+      // --- LEGACY FALLBACK FOR HTTP ---
+      const textArea = document.createElement("textarea");
+      textArea.value = inviteUrl;
+      // Ensure the textarea isn't visible
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Fallback copy failed', err);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const handleForfeit = () => {
