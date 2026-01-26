@@ -16,10 +16,11 @@ function Login() {
 
     try {
       // FIX: Use a clear variable name like 'res' (response)
-      const res = await axios.post(`http://localhost:5000${endpoint}`, {
+      // NEW (Monolithic - Works on Vultr AND Laptop)
+      const res = await axios.post(endpoint, {
         username,
         password
-      });
+});
 
       // FIX: Use 'res' here too
       localStorage.setItem('user', res.data.username || res.data.user.username);

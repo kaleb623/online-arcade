@@ -444,7 +444,7 @@ function SnakeGame() {
   const endGame = () => {
     setGameStatus('gameover');
     if(username !== "Anonymous") {
-        axios.post('http://localhost:5000/api/score', { username, game: 'snake', score: scoreRef.current })
+        axios.post('/api/score', { username, game: 'snake', score: scoreRef.current })
             .catch(err => console.error(err));
     }
   };

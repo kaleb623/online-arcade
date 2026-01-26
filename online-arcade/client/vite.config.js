@@ -6,11 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': {
+      '/api': 'http://localhost:5000', // Forward API calls to backend
+      '/socket.io': {
         target: 'http://localhost:5000',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
-  },
+        ws: true
+      }
+    }
+  }
 })
