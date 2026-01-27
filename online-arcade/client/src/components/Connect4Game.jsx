@@ -100,7 +100,7 @@ function Connect4Game() {
     }
   }, [searchParams, navigate, spectatingTarget]);
 
-  // --- 2. SPECTATOR CONNECTION (FIXED: Minimal Dependencies) ---
+  // --- 2. SPECTATOR CONNECTION ---
   useEffect(() => {
     if (spectatingTarget) {
       console.log(`Joined spectator room for: ${spectatingTarget}`);
@@ -120,12 +120,11 @@ function Connect4Game() {
         socket.emit('update_activity', { status: 'online', game: null });
       };
     }
-  }, [spectatingTarget]); // <--- CRITICAL FIX: Only run when target changes
+  }, [spectatingTarget]);
 
-  // --- 3. SOCIAL PRESENCE UPDATER (Separated to avoid loops) ---
+  // --- 3. SOCIAL PRESENCE UPDATER ---
   useEffect(() => {
     if (spectatingTarget) {
-        // I am watching someone
         const p1 = playerNames[1];
         const p2 = playerNames[2];
         const gameLabel = (p1 !== 'Player 1' || p2 !== 'Player 2') 
@@ -135,7 +134,6 @@ function Connect4Game() {
         socket.emit('update_activity', { status: 'watching', game: gameLabel });
     } 
     else if (gameState === 'playing' && !winner) {
-        // I am playing
         const opponentName = myPlayerNum === 1 ? playerNames[2] : playerNames[1];
         socket.emit('update_activity', { 
             status: 'gaming', 
@@ -187,7 +185,6 @@ function Connect4Game() {
         broadcastState(boardRef.current, currentPlayerRef.current, data.winner);
     });
 
-    // LISTEN FOR NEW SPECTATORS
     socket.on('spectator_joined', () => {
         if (!spectatingTarget && gameState === 'playing') {
             broadcastState(boardRef.current, currentPlayerRef.current, winnerRef.current);
@@ -231,8 +228,6 @@ function Connect4Game() {
       setBoard(newBoard);
       setCurrentPlayer(nextPlayer);
       
-      // BROADCAST STATE FOR SPECTATORS
-      // Use refs to ensure we send the calculated state, not stale state
       socket.emit('stream_game_data', {
           board: newBoard,
           currentPlayer: nextPlayer,
@@ -386,12 +381,54 @@ function Connect4Game() {
   const createGame = () => socket.emit('create_c4_room');
   const joinGame = () => { if(joinInput) socket.emit('join_c4_room', { roomCode: joinInput.toUpperCase(), username }); };
   
+  // --- HTTP-SAFE COPY FALLBACK ---
   const copyCode = () => {
-      navigator.clipboard.writeText(`${window.location.origin}/game/connect4?room=${roomCode}`)
-        .then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000); 
-        });
+      const link = `${window.location.origin}/game/connect4?room=${roomCode}`;
+      
+      // Modern Secure Method
+      if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(link)
+            .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000); 
+            })
+            .catch(err => {
+                console.error("Clipboard API failed", err);
+                fallbackCopy(link);
+            });
+      } else {
+          // Legacy/Insecure Fallback
+          fallbackCopy(link);
+      }
+  };
+
+  const fallbackCopy = (text) => {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      
+      // Avoid scrolling to bottom
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+          } else {
+              prompt("Copy this link:", text);
+          }
+      } catch (err) {
+          console.error('Fallback oops', err);
+          prompt("Copy this link:", text);
+      }
+      
+      document.body.removeChild(textArea);
   };
 
   return (
