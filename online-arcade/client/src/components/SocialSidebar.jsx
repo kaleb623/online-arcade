@@ -48,27 +48,28 @@ const SocialSidebar = () => {
     // 1. Check if they are playing against ME
     const isVsMe = gameString.includes(` vs ${currentUser}`);
 
-    // 2. Extract Slug
+    // 2. Extract Slug (Smart Matching)
     let slug = '';
     const lower = gameString.toLowerCase();
     
     if (lower.startsWith('connect 4')) {
         slug = 'connect4'; 
+    } else if (lower.startsWith('neon tiles')) { // <--- ADDED THIS FIX
+        slug = 'neontiles';
     } else {
+        // Default: take the first word (e.g. "Snake" -> "snake")
         slug = gameString.split(' ')[0].toLowerCase();
     }
 
-    // 3. Extract Spectator Target (if they are watching someone)
-    // Format: "GameName (Target)"
+    // 3. Extract Spectator Target
     let target = null;
-    const match = gameString.match(/\(([^)]+)\)/); // Captures text inside ()
+    const match = gameString.match(/\(([^)]+)\)/); 
     if (match) target = match[1];
 
     return { slug, target, isVsMe };
   };
 
   // --- HELPER: Find MY Opponent ---
-  // If I am playing "Connect 4 vs PlayerB", returns "PlayerB"
   const getMyOpponent = () => {
       const myProfile = onlineUsers.find(u => u.username === currentUser);
       if (!myProfile || !myProfile.game) return null;
@@ -97,18 +98,16 @@ const SocialSidebar = () => {
         const isWatching = u.status === 'watching';
         const { slug, target, isVsMe } = getActivityInfo(u.game);
 
-        // LOGIC: Hide the Action Button if...
         const hideButton = 
-            isMe ||                                             // 1. It is ME
-            (currentSpectatingTarget === u.username) ||         // 2. I am already directly watching this user
-            isVsMe ||                                           // 3. They are playing against ME
-            (isWatching && currentSpectatingTarget === target) || // 4. I am watching the person THEY are watching (loop)
-            (isWatching && target === currentUser) ||           // 5. They are watching ME (NEW FIX)
-            (isWatching && target === myOpponent);              // 6. They are watching my opponent (NEW FIX)
+            isMe ||                                             
+            (currentSpectatingTarget === u.username) ||         
+            isVsMe ||                                           
+            (isWatching && currentSpectatingTarget === target) || 
+            (isWatching && target === currentUser) ||           
+            (isWatching && target === myOpponent);              
 
         return (
           <div key={u.username} style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* Status Dot */}
             <div style={{ 
               width: '10px', height: '10px', borderRadius: '50%', 
               backgroundColor: u.game ? '#4cd137' : '#7f8c8d', 
@@ -134,7 +133,6 @@ const SocialSidebar = () => {
                   'In Menu'
                 )}
 
-                {/* THE ACTION BUTTON */}
                 {u.game && !hideButton && (
                   <button 
                     onClick={() => {

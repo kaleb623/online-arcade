@@ -9,7 +9,8 @@ import SnakeGame from './components/SnakeGame';
 import BreakoutGame from './components/BreakoutGame'; 
 import TetrisGame from './components/TetrisGame';
 import CheckersGame from './components/CheckersGame';
-import Connect4Game from './components/Connect4Game'; // <--- IMPORT
+import Connect4Game from './components/Connect4Game';
+import NeonTilesGame from './components/NeonTilesGame.jsx';
 import ProtectedRoute from './components/ProtectedRoute';
 import SocialSidebar from './components/SocialSidebar';
 
@@ -112,6 +113,7 @@ function App() {
             <Route path="/game/breakout" element={<ProtectedRoute><BreakoutGame /></ProtectedRoute>} />
             <Route path="/game/tetris" element={<ProtectedRoute><TetrisGame /></ProtectedRoute>} />
             <Route path="/game/checkers" element={<CheckersGame />} />
+            <Route path="/game/neontiles" element={<ProtectedRoute><NeonTilesGame /></ProtectedRoute>} />
             <Route path="/game/connect4" element={<Connect4Game />} /> {/* <--- ADDED */}
           </Routes>
         </main>

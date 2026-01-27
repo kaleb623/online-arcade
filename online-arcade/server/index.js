@@ -84,9 +84,44 @@ app.post('/api/score', async (req, res) => {
 
 app.get('/api/leaderboard/:game', async (req, res) => {
     try {
-        const scores = await Score.find({ game: req.params.game }).sort({ score: -1 }).limit(10);
+        const { game } = req.params;
+
+        const scores = await Score.aggregate([
+            // 1. Filter by the specific game
+            { $match: { game: game } },
+            
+            // 2. Sort by score descending (so the first one we group is the highest)
+            { $sort: { score: -1 } },
+            
+            // 3. Group by username, taking the first score found (which is the highest due to sort)
+            {
+                $group: {
+                    _id: "$username", // Group by username
+                    score: { $first: "$score" }, // Keep highest score
+                    date: { $first: "$createdAt" } // Keep date of highest score
+                }
+            },
+            
+            // 4. Sort the grouped results by score descending
+            { $sort: { score: -1 } },
+            
+            // 5. Take top 10
+            { $limit: 10 },
+            
+            // 6. Project to match your frontend structure
+            {
+                $project: {
+                    _id: 0, // Hide the group ID
+                    username: "$_id", // Rename _id back to username
+                    score: 1,
+                    createdAt: "$date"
+                }
+            }
+        ]);
+
         res.json(scores);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: "Failed to fetch leaderboard" });
     }
 });

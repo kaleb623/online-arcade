@@ -8,6 +8,7 @@ function Home() {
       games: [
         { path: "/game/snake", name: "SNAKE", icon: "🐍", desc: "High speed, high stakes." },
         { path: "/game/tetris", name: "TETRIS", icon: "🧱", desc: "Classical stacker." },
+        { path: "/game/neontiles", name: "NEON TILES", icon: "🎹", desc: "Don't tap white. Speed run." },
         { path: "/game/breakout", name: "BREAKOUT", icon: "🎾", desc: "Destroy the wall." },
       ]
     },
