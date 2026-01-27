@@ -28,13 +28,15 @@ function Home() {
           color: #fff;
           display: flex;
           flex-direction: column;
+          /* CENTER CONTENT ADDITIONS */
+          align-items: center; 
+          text-align: center;
+          /* ------------------------ */
           padding: 35px;
           border-radius: 16px;
           transition: transform 0.2s;
           
           /* THE PERMANENT GRADIENT BORDER TRICK */
-          /* 1. The inner box is solid dark grey (#252525) */
-          /* 2. The border area is the Green->Cyan Gradient */
           background: 
             linear-gradient(#252525, #252525) padding-box,
             linear-gradient(90deg, #4cd137, #00d2d3) border-box;
@@ -50,7 +52,7 @@ function Home() {
 
       {gameCategories.map((cat, idx) => (
         <div key={idx} style={{ marginBottom: '60px' }}>
-          <h2 style={{ letterSpacing: '4px', color: '#888', fontSize: '0.8rem', marginBottom: '25px', textTransform: 'uppercase' }}>{cat.title}</h2>
+          <h2 style={{ letterSpacing: '4px', color: '#ffffff', fontSize: '1.6rem', textAlign: 'center', marginBottom: '25px', textTransform: 'uppercase' }}>{cat.title}</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '30px' }}>
             {cat.games.map((game) => (
               <Link key={game.name} to={game.path} className="gg-card">
