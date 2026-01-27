@@ -1,108 +1,69 @@
 // client/src/pages/Home.jsx
 import { Link } from 'react-router-dom';
 
-const Home = () => {
-  const username = localStorage.getItem('user');
+function Home() {
+  const gameCategories = [
+    {
+      title: "SINGLE PLAYER CLASSICS",
+      games: [
+        { path: "/game/snake", name: "SNAKE", icon: "🐍", desc: "High speed, high stakes." },
+        { path: "/game/tetris", name: "TETRIS", icon: "🧱", desc: "Classical stacker." },
+        { path: "/game/breakout", name: "BREAKOUT", icon: "🎾", desc: "Destroy the wall." },
+      ]
+    },
+    {
+      title: "MULTIPLAYER BATTLES",
+      games: [
+        { path: "/game/checkers", name: "CHECKERS", icon: "🏁", desc: "Strategy & Skill." },
+      ]
+    }
+  ];
 
   return (
-    <div style={{ textAlign: 'center', marginTop: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
-      
-      {/* HEADER */}
-      <div style={{ 
-        fontSize: '8rem', 
-        fontWeight: '900',
-        fontFamily: 'sans-serif', 
-        letterSpacing: '-10px',   
-        marginBottom: '10px',
-        textShadow: '0 0 30px rgba(0, 210, 211, 0.5)' 
-      }}>
-        <span style={{ color: '#4cd137' }}>G</span>
-        <span style={{ color: '#00d2d3' }}>G</span>
-      </div>
-      <p style={{ color: '#b2bec3', fontSize: '1.2rem', marginBottom: '50px' }}>
-        Hi, {username ? username : 'GUEST'}
-      </p>
+    <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <style>{`
+        .gg-card {
+          position: relative;
+          text-decoration: none;
+          color: #fff;
+          display: flex;
+          flex-direction: column;
+          padding: 35px;
+          border-radius: 16px;
+          transition: transform 0.2s;
+          
+          /* THE PERMANENT GRADIENT BORDER TRICK */
+          /* 1. The inner box is solid dark grey (#252525) */
+          /* 2. The border area is the Green->Cyan Gradient */
+          background: 
+            linear-gradient(#252525, #252525) padding-box,
+            linear-gradient(90deg, #4cd137, #00d2d3) border-box;
+            
+          /* Make the border transparent so the gradient shines through */
+          border: 2px solid transparent;
+        }
 
-      {/* --- SINGLE PLAYER SECTION --- */}
-      <h2 style={{ color: '#b2bec3', borderBottom: '2px solid #636e72', width: '80%', margin: '0 auto 30px auto', paddingBottom: '10px', letterSpacing: '2px' }}>
-        SINGLE PLAYER
-      </h2>
+        .gg-card:hover {
+          transform: translateY(-5px);
+        }
+      `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', marginBottom: '60px' }}>
-        
-        {/* SNAKE */}
-        <Link to="/game/snake" style={{ textDecoration: 'none' }}>
-          <div style={cardStyle}>
-            <div style={{ fontSize: '4rem' }}>🐍</div>
-            <h2 style={{ color: '#2ecc71', margin: '10px 0' }}>SNAKE</h2>
-            <p style={{ color: '#fff' }}>Snake but better</p>
-            <div style={playButtonStyle}>PLAY NOW</div>
+      {gameCategories.map((cat, idx) => (
+        <div key={idx} style={{ marginBottom: '60px' }}>
+          <h2 style={{ letterSpacing: '4px', color: '#888', fontSize: '0.8rem', marginBottom: '25px', textTransform: 'uppercase' }}>{cat.title}</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '30px' }}>
+            {cat.games.map((game) => (
+              <Link key={game.name} to={game.path} className="gg-card">
+                <div style={{ fontSize: '3.5rem', marginBottom: '15px' }}>{game.icon}</div>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '1.6rem', color: '#fff' }}>{game.name}</h3>
+                <p style={{ margin: 0, color: '#999', fontSize: '0.9rem', lineHeight: '1.4' }}>{game.desc}</p>
+              </Link>
+            ))}
           </div>
-        </Link>
-
-        {/* BREAKOUT */}
-        <Link to="/game/breakout" style={{ textDecoration: 'none' }}>
-          <div style={cardStyle}>
-            <div style={{ fontSize: '4rem' }}>🧱</div>
-            <h2 style={{ color: '#ff7675', margin: '10px 0' }}>BREAKOUT</h2>
-            <p style={{ color: '#fff' }}>Bricked up</p>
-            <div style={playButtonStyle}>PLAY NOW</div>
-          </div>
-        </Link>
-
-        {/* TETRIS */}
-        <Link to="/game/tetris" style={{ textDecoration: 'none' }}>
-          <div style={cardStyle}>
-            <div style={{ fontSize: '4rem' }}>🧩</div>
-            <h2 style={{ color: '#a000f0', margin: '10px 0' }}>TETRIS</h2>
-            <p style={{ color: '#fff' }}>Stack 'em up.</p>
-            <div style={playButtonStyle}>PLAY NOW</div>
-          </div>
-        </Link>
-      </div>
-
-      {/* --- MULTIPLAYER SECTION --- */}
-      <h2 style={{ color: '#b2bec3', borderBottom: '2px solid #636e72', width: '80%', margin: '0 auto 30px auto', paddingBottom: '10px', letterSpacing: '2px' }}>
-        MULTIPLAYER
-      </h2>
-
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', marginBottom: '50px' }}>
-        
-        {/* CHECKERS */}
-        <Link to="/game/checkers" style={{ textDecoration: 'none' }}>
-          <div style={cardStyle}>
-            <div style={{ fontSize: '4rem' }}>🔴</div>
-            <h2 style={{ color: '#e17055', margin: '10px 0' }}>CHECKERS</h2>
-            <p style={{ color: '#fff' }}>1v1 Strategy</p>
-            <div style={playButtonStyle}>PLAY NOW</div>
-          </div>
-        </Link>
-
-      </div>
+        </div>
+      ))}
     </div>
   );
-};
-
-// --- STYLES ---
-const cardStyle = {
-  backgroundColor: '#2d3436',
-  border: '4px solid #636e72',
-  borderRadius: '15px',
-  padding: '30px',
-  width: '250px',
-  cursor: 'pointer',
-  transition: 'transform 0.2s, box-shadow 0.2s',
-  boxShadow: '0 10px 20px rgba(0,0,0,0.5)'
-};
-
-const playButtonStyle = {
-  marginTop: '20px',
-  backgroundColor: '#0984e3',
-  color: 'white',
-  padding: '10px',
-  borderRadius: '5px',
-  fontWeight: 'bold',
-  boxShadow: '0 4px 0 #0056b3'
-};
+}
 
 export default Home;

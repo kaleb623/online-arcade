@@ -1,130 +1,67 @@
 // client/src/pages/Leaderboard.jsx
 import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
-
-const AVAILABLE_GAMES = [
-  { id: 'snake', label: '🐍 SNAKE' },
-  { id: 'breakout', label: '🧱 BREAKOUT' },
-  { id: 'tetris', label: '🧩 TETRIS' }
-];
 
 function Leaderboard() {
-  const [selectedGame, setSelectedGame] = useState('snake');
+  const { game } = useParams();
   const [scores, setScores] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  // Re-fetch whenever the selected game changes
   useEffect(() => {
-    setLoading(true);
-    // Use relative path so it works with the unified proxy
-    axios.get(`/api/leaderboard/${selectedGame}`)
-      .then(res => {
-        setScores(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Leaderboard error:", err);
-        setLoading(false);
-      });
-  }, [selectedGame]);
+    axios.get(`/api/leaderboard/${game}`)
+      .then(res => setScores(res.data))
+      .catch(err => console.log(err));
+  }, [game]);
 
   return (
-    <div style={{ 
-      textAlign: 'center', 
-      marginTop: '50px', 
-      fontFamily: "'Courier New', Courier, monospace",
-      color: '#fff'
-    }}>
+    <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+      <h1 style={{ letterSpacing: '4px', textAlign: 'center', marginBottom: '40px' }}>GLOBAL RANKINGS</h1>
       
-      <h1 style={{ 
-        fontSize: '3rem', 
-        textShadow: '0 0 10px #0984e3',
-        marginBottom: '10px'
-      }}>
-        HIGH SCORES
-      </h1>
-      
-      <Link to="/" style={{ color: '#00cec9', textDecoration: 'none', fontSize: '1.2rem' }}>
-        ← BACK TO ARCADE
-      </Link>
-
-      {/* --- GAME SELECTOR TABS --- */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '40px', marginBottom: '30px' }}>
-        {AVAILABLE_GAMES.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setSelectedGame(g.id)}
-            style={{
-              padding: '10px 20px',
-              fontSize: '1.2rem',
-              cursor: 'pointer',
-              border: 'none',
-              borderRadius: '5px',
-              fontWeight: 'bold',
-              fontFamily: 'inherit',
-              // Active vs Inactive Styles
-              backgroundColor: selectedGame === g.id ? '#0984e3' : '#2d3436',
-              color: selectedGame === g.id ? '#fff' : '#b2bec3',
-              boxShadow: selectedGame === g.id ? '0 0 15px #0984e3' : 'none',
-              transform: selectedGame === g.id ? 'scale(1.1)' : 'scale(1)',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {g.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <Link to="/leaderboard/snake" style={tabStyle(game === 'snake')}>SNAKE</Link>
+        <Link to="/leaderboard/tetris" style={tabStyle(game === 'tetris')}>TETRIS</Link>
+        <Link to="/leaderboard/breakout" style={tabStyle(game === 'breakout')}>BREAKOUT</Link>
       </div>
 
-      {/* --- SCORE LIST --- */}
       <div style={{ 
-        backgroundColor: '#2d3436', 
-        maxWidth: '500px', 
-        margin: '0 auto', 
-        padding: '20px', 
-        borderRadius: '15px',
-        border: '4px solid #636e72',
+        background: '#111', 
+        border: '1px solid #333', 
+        borderRadius: '12px', 
+        padding: '20px',
         boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
       }}>
-        {loading ? (
-          <p style={{ color: '#b2bec3' }}>LOADING DATA...</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {scores.length === 0 ? (
-              <p style={{ color: '#b2bec3', fontStyle: 'italic' }}>NO SCORES YET. BE THE FIRST!</p>
-            ) : (
-              scores.map((entry, index) => (
-                <li key={index} style={{ 
-                  background: index === 0 ? 'rgba(255, 215, 0, 0.2)' : 'rgba(0,0,0,0.2)', // Gold tint for #1
-                  border: index === 0 ? '1px solid #ffd700' : 'none',
-                  margin: '10px 0', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '1.1rem'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <span style={{ 
-                      color: index === 0 ? '#ffd700' : index === 1 ? '#c0c0c0' : index === 2 ? '#cd7f32' : '#636e72',
-                      fontWeight: 'bold',
-                      fontSize: '1.5rem'
-                    }}>
-                      #{index + 1}
-                    </span>
-                    <span style={{ color: '#fff' }}>{entry.username}</span>
-                  </div>
-                  <span style={{ color: '#00cec9', fontWeight: 'bold' }}>{entry.score}</span>
-                </li>
-              ))
-            )}
-          </ul>
-        )}
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ color: '#555', borderBottom: '1px solid #333' }}>
+              <th style={{ padding: '15px' }}>#</th>
+              <th style={{ padding: '15px' }}>PLAYER</th>
+              <th style={{ padding: '15px' }}>SCORE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scores.map((s, i) => (
+              <tr key={s._id} style={{ borderBottom: '1px solid #222' }}>
+                <td style={{ padding: '15px', color: '#b2bec3' }}>{i + 1}</td>
+                <td style={{ padding: '15px', fontWeight: 'bold' }}>{s.username}</td>
+                <td style={{ padding: '15px', color: '#4cd137' }}>{s.score.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
     </div>
   );
 }
+
+const tabStyle = (active) => ({
+  padding: '10px 20px',
+  background: active ? '#fff' : '#111',
+  color: active ? '#000' : '#b2bec3',
+  textDecoration: 'none',
+  borderRadius: '6px',
+  fontWeight: 'bold',
+  fontSize: '0.8rem',
+  border: '1px solid #333'
+});
 
 export default Leaderboard;
