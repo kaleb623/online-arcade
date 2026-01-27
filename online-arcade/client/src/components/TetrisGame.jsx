@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { socket } from '../socket'; // Integrated shared socket
 
 // --- CONFIGURATION ---
 const COLS = 10;
@@ -16,7 +17,7 @@ const TETROMINOS = {
   J: { shape: [[1, 0, 0], [1, 1, 1]], color: '#0000f0' },
   L: { shape: [[0, 0, 1], [1, 1, 1]], color: '#f0a000' },
   O: { shape: [[1, 1], [1, 1]], color: '#f0f000' },
-  S: { shape: [[0, 1, 1], [1, 1, 0]], color: '#00f000' },
+  S: { shape: [[0, 1, 1], [1, 1, 0]], color: '#00f0f0' },
   T: { shape: [[0, 1, 0], [1, 1, 1]], color: '#a000f0' },
   Z: { shape: [[1, 1, 0], [0, 1, 1]], color: '#f00000' }
 };
@@ -106,7 +107,7 @@ function TetrisGame() {
   const [countdown, setCountdown] = useState(3);
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
   
-  // Game State
+  // Game State Refs
   const gridRef = useRef(Array.from({ length: ROWS }, () => Array(COLS).fill(null)));
   const pieceRef = useRef(null); 
   const nextPieceRef = useRef(null); 
@@ -122,6 +123,24 @@ function TetrisGame() {
 
   const username = localStorage.getItem('user') || "Anonymous";
 
+  // --- NEW: SOCIAL ACTIVITY SYNC ---
+  useEffect(() => {
+    if (gameStatus === 'playing' && !isGameOverRef.current) {
+        socket.emit('update_activity', { 
+            status: 'gaming', 
+            game: `Tetris (Score: ${score})` 
+        });
+    }
+  }, [score, gameStatus]);
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(requestRef.current);
+      // Clean up activity when leaving the page
+      socket.emit('update_activity', { status: 'online', game: null });
+    };
+  }, []);
+
   // --- HELPERS ---
   const createPiece = () => {
       const types = 'IJLOSTZ';
@@ -130,7 +149,6 @@ function TetrisGame() {
       return {
           shape: def.shape,
           color: def.color,
-          // Center the piece roughly
           x: Math.floor((COLS - def.shape[0].length) / 2),
           y: 0
       };
@@ -188,7 +206,6 @@ function TetrisGame() {
       const deltaTime = time - lastTimeRef.current;
       lastTimeRef.current = time;
 
-      // Variable Speed (Soft Drop)
       const currentSpeed = downKeyRef.current ? 50 : dropIntervalRef.current;
 
       dropCounterRef.current += deltaTime;
@@ -208,7 +225,7 @@ function TetrisGame() {
       p.y++;
       
       if (collide(gridRef.current, p)) {
-          p.y--; // Move back up (lock position)
+          p.y--; 
           gridRef.current = merge(gridRef.current, p);
           playSynth('drop', isSfxMutedRef.current);
           
@@ -267,7 +284,7 @@ function TetrisGame() {
            p.y++;
        }
        p.y--; 
-       dropCounterRef.current = dropIntervalRef.current + 1; // Force lock immediately
+       dropCounterRef.current = dropIntervalRef.current + 1;
   };
 
   // --- DRAWING ---
@@ -305,12 +322,10 @@ function TetrisGame() {
       const ctx = nextCanvasRef.current.getContext('2d');
       const PREVIEW_SIZE = 25; 
       
-      // Clear background
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, 100, 100);
 
       const piece = nextPieceRef.current;
-      // Center in 4x4 grid
       const offsetX = (4 - piece.shape[0].length) / 2;
       const offsetY = (4 - piece.shape.length) / 2;
 
@@ -326,14 +341,12 @@ function TetrisGame() {
   // --- EVENTS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-        // Prevent scrolling
         if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", "Space"].indexOf(e.code) > -1) e.preventDefault();
         
         if (gameStatus !== 'playing') return;
 
         if (e.key === "ArrowLeft") playerMove(-1);
         else if (e.key === "ArrowRight") playerMove(1);
-        // ADDED 'R' KEY SUPPORT HERE
         else if (e.key === "ArrowUp" || e.key === "r" || e.key === "R") playerRotate();
         else if (e.code === "Space") playerHardDrop();
         else if (e.key === "ArrowDown") downKeyRef.current = true;
@@ -351,13 +364,11 @@ function TetrisGame() {
     };
   }, [gameStatus]);
 
-  useEffect(() => { isSfxMutedRef.current = isSfxMuted; localStorage.setItem('snake_sfx_muted', isSfxMuted); }, [isSfxMuted]);
+  useEffect(() => { 
+    isSfxMutedRef.current = isSfxMuted; 
+    localStorage.setItem('snake_sfx_muted', isSfxMuted); 
+  }, [isSfxMuted]);
   
-  // Cleanup
-  useEffect(() => {
-      return () => cancelAnimationFrame(requestRef.current);
-  }, []);
-
   const startGame = () => {
       if (audioCtx.state === 'suspended') audioCtx.resume();
       setGameStatus('countdown');
@@ -377,6 +388,8 @@ function TetrisGame() {
   
   const endGame = () => {
       setGameStatus('gameover');
+      // Update activity to online upon game over
+      socket.emit('update_activity', { status: 'online', game: null });
       if(username !== "Anonymous") {
           axios.post('/api/score', { username, game: 'tetris', score: scoreRef.current }).catch(console.error);
       }
@@ -393,7 +406,6 @@ function TetrisGame() {
     }
   }, [gameStatus, countdown]);
 
-  // --- STYLES ---
   const overlayStyle = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 10 };
   const buttonStyle = { padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', background: '#0984e3', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', fontFamily: "'Courier New', Courier, monospace", boxShadow: '0 5px 0 #0056b3' };
   const countdownStyle = { fontSize: '10rem', color: '#ffeaa7', fontWeight: '800', textShadow: '0 0 20px rgba(255, 234, 167, 0.5)', animation: 'pulse 1s infinite' };
@@ -402,10 +414,7 @@ function TetrisGame() {
     <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', paddingBottom: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
       {score >= 2000 && <SweatRain />}
 
-      {/* MAIN FLEX CONTAINER: GAME LEFT | SIDEBAR RIGHT */}
       <div style={{ display: 'flex', gap: '20px' }}>
-        
-        {/* --- LEFT: GAME BOARD --- */}
         <div style={{ 
           backgroundColor: '#2d3436', padding: '20px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
           boxShadow: '0 0 40px rgba(160, 0, 240, 0.4)', borderColor: '#636e72' 
@@ -425,30 +434,25 @@ function TetrisGame() {
                 <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
                 <div>
                   <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                  <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                  <button onClick={() => navigate('/leaderboard/tetris')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* --- RIGHT: SIDEBAR INFO --- */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '160px' }}>
-          
-          {/* GG LOGO BOX */}
           <div style={{ backgroundColor: '#000', padding: '15px', borderRadius: '10px', border: '2px solid #333', textAlign: 'center', boxShadow: '0 0 10px rgba(160,0,240,0.2)' }}>
              <div style={{ display: 'flex', justifyContent: 'center', fontWeight: '900', fontSize: '2rem', fontFamily: 'sans-serif', letterSpacing: '-4px' }}>
                 <span style={{ color: '#4cd137' }}>G</span><span style={{ color: '#00d2d3' }}>G</span>
              </div>
           </div>
 
-          {/* SCORE BOX */}
           <div style={{ backgroundColor: '#2d3436', padding: '15px', borderRadius: '10px', border: '4px solid #636e72', color: '#fff' }}>
              <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '5px' }}>SCORE</div>
              <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{String(score).padStart(5, '0')}</div>
           </div>
 
-          {/* NEXT PIECE BOX */}
           <div style={{ backgroundColor: '#2d3436', padding: '15px', borderRadius: '10px', border: '4px solid #636e72', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
              <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '10px' }}>NEXT PIECE</div>
              <div style={{ border: '4px solid #636e72', backgroundColor: '#000', padding: '5px', borderRadius: '4px' }}>
@@ -456,7 +460,6 @@ function TetrisGame() {
              </div>
           </div>
 
-          {/* AUDIO CONTROLS */}
           <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#2d3436', padding: '10px', borderRadius: '10px', border: '2px solid #333' }}>
               <button onClick={() => setIsSfxMuted(!isSfxMuted)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>{isSfxMuted ? '🔇' : '🔊'}</button>
           </div>
@@ -464,9 +467,7 @@ function TetrisGame() {
           <div style={{ color: '#636e72', fontSize: '0.7rem', textAlign: 'center', marginTop: '10px' }}>
             ↑ OR 'R' TO ROTATE<br/>HOLD ↓ FOR SPEED<br/>SPACE TO DROP
           </div>
-
         </div>
-
       </div>
     </div>
   );

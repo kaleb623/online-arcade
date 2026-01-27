@@ -5,8 +5,8 @@ const UserSchema = new mongoose.Schema({
   username: {
     type: String,
     required: true,
-    unique: true, // No two players can have the same name
-    trim: true,   // Removes spaces from "  User  "
+    unique: true,
+    trim: true,
     minlength: 3
   },
   password: {
@@ -14,9 +14,24 @@ const UserSchema = new mongoose.Schema({
     required: true,
     minlength: 3
   },
+  // --- NEW SOCIAL FIELDS ---
+  avatar: {
+    type: String, 
+    default: 'default_avatar.png' 
+  },
+  statusMessage: {
+    type: String,
+    default: 'Available',
+    maxlength: 50
+  },
+  friends: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  // -------------------------
   tickets: {
     type: Number,
-    default: 0 // Everyone starts with 0 tickets
+    default: 0
   },
   createdAt: {
     type: Date,

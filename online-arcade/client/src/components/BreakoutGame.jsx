@@ -3,6 +3,7 @@ import useGameSounds from '../hooks/useGameSounds';
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { socket } from '../socket'; // Integrated shared socket
 
 // --- CONFIGURATION ---
 const CANVAS_SIZE = 800; 
@@ -19,7 +20,7 @@ const BRICK_WIDTH = (CANVAS_SIZE - (BRICK_OFFSET_LEFT * 2) - (BRICK_PADDING * (B
 const BASE_VOLUME = 0.4;
 
 const MUSIC_STAGES = [
-  { limit: 500,  track: '/music/SnakeGame/stage1.mp3' }, 
+  { limit: 500,   track: '/music/SnakeGame/stage1.mp3' }, 
   { limit: 1000, track: '/music/SnakeGame/stage2.mp3' }, 
   { limit: 2000, track: '/music/SnakeGame/stage3.mp3' }, 
   { limit: 3500, track: '/music/SnakeGame/stage4.mp3' }, 
@@ -33,7 +34,8 @@ const STAGE_COLORS = [
 ];
 
 // --- 🎹 THE SYNTHESIZER ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const AudioContextClass = (window.AudioContext || window.webkitAudioContext);
+const audioCtx = new AudioContextClass();
 
 const playPopSound = (isMuted, velocity = 1) => {
   if (isMuted || audioCtx.state === 'suspended') {
@@ -42,14 +44,12 @@ const playPopSound = (isMuted, velocity = 1) => {
   }
   const osc = audioCtx.createOscillator();
   const gainNode = audioCtx.createGain();
-
   const baseFreq = 300; 
   const pitchMod = Math.min(velocity * 10, 200); 
   
   osc.type = 'sine'; 
   osc.frequency.setValueAtTime(baseFreq + pitchMod, audioCtx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(baseFreq/2, audioCtx.currentTime + 0.1);
-
   gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
 
@@ -58,7 +58,6 @@ const playPopSound = (isMuted, velocity = 1) => {
   osc.start();
   osc.stop(audioCtx.currentTime + 0.1); 
 };
-
 
 const SweatRain = () => {
   const [drops, setDrops] = useState([]);
@@ -96,7 +95,6 @@ function BreakoutGame() {
   const canvasRef = useRef();
   const gameContainerRef = useRef(null); 
   const navigate = useNavigate();
-  
   const { playSound } = useGameSounds('BreakoutGame'); 
 
   const [gameStatus, setGameStatus] = useState('idle');
@@ -108,10 +106,7 @@ function BreakoutGame() {
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
   
   const paddleRef = useRef({ x: (CANVAS_SIZE - PADDLE_WIDTH) / 2 });
-  
-  // --- SPEED ADJUSTMENT: 3.2 -> 2.72 (-15%) ---
   const ballRef = useRef({ x: CANVAS_SIZE/2, y: CANVAS_SIZE - 30, dx: 2.72, dy: -2.72 });
-  
   const bricksRef = useRef(
       Array.from({ length: BRICK_COL_COUNT }, () => 
           Array.from({ length: BRICK_ROW_COUNT }, () => ({ x: 0, y: 0, status: 1 }))
@@ -122,17 +117,32 @@ function BreakoutGame() {
   const rightPressed = useRef(false);
   const scoreRef = useRef(0);
   const requestRef = useRef();
-  
   const isSfxMutedRef = useRef(isSfxMuted); 
   const musicRef = useRef(new Audio());
   const currentStageIndexRef = useRef(-1); 
   const fadeIntervalRef = useRef(null); 
   const isGameOverRef = useRef(false);
-  
   const username = localStorage.getItem('user') || "Anonymous";
 
   const currentStageIndex = getStageIndex(score);
   const currentGlowColor = STAGE_COLORS[currentStageIndex];
+
+  // --- NEW: SOCIAL ACTIVITY SYNC ---
+  useEffect(() => {
+    if (gameStatus === 'playing' && !isGameOverRef.current) {
+        socket.emit('update_activity', { 
+            status: 'gaming', 
+            game: `Breakout (Score: ${score})` 
+        });
+    }
+  }, [score, gameStatus]);
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(requestRef.current);
+      socket.emit('update_activity', { status: 'online', game: null });
+    };
+  }, []);
 
   const initBricks = () => {
       const newBricks = [];
@@ -157,7 +167,6 @@ function BreakoutGame() {
     }
   }, [isMusicMuted, gameStatus]);
 
-  // --- CLEANUP ON UNMOUNT ---
   useEffect(() => {
     return () => {
       if (musicRef.current) {
@@ -228,8 +237,6 @@ function BreakoutGame() {
     const ctx = canvasRef.current.getContext("2d");
     ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-    if(!bricksRef.current || bricksRef.current.length === 0) return;
-
     for(let c=0; c<BRICK_COL_COUNT; c++) {
         for(let r=0; r<BRICK_ROW_COUNT; r++) {
             if(bricksRef.current[c] && bricksRef.current[c][r] && bricksRef.current[c][r].status === 1) {
@@ -289,8 +296,6 @@ function BreakoutGame() {
     if(b.y + b.dy > CANVAS_SIZE - BALL_RADIUS - PADDLE_HEIGHT - 10) {
         if(b.x > paddleRef.current.x && b.x < paddleRef.current.x + PADDLE_WIDTH) {
             const hitPoint = (b.x - paddleRef.current.x) / PADDLE_WIDTH;
-            
-            // --- REDUCED ENGLISH: 8 -> 6.8 (-15%) ---
             b.dx = (hitPoint - 0.5) * 6.8; 
             b.dy = -(Math.abs(b.dy) * 1.02); 
         } 
@@ -326,7 +331,6 @@ function BreakoutGame() {
   };
 
   const resetBall = () => {
-    // --- RESET SPEED: 2.72 ---
     ballRef.current = { x: CANVAS_SIZE/2, y: CANVAS_SIZE - 40, dx: 2.72, dy: -2.72 };
   };
 
@@ -366,7 +370,6 @@ function BreakoutGame() {
 
   const startGame = () => {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-
     initBricks();
     setGameStatus('countdown');
     setCountdown(3);
@@ -381,6 +384,7 @@ function BreakoutGame() {
 
   const endGame = () => {
     setGameStatus('gameover');
+    socket.emit('update_activity', { status: 'online', game: null });
     if(username !== "Anonymous") {
         axios.post('/api/score', { username, game: 'breakout', score: scoreRef.current }).catch(console.error);
     }
@@ -408,7 +412,6 @@ function BreakoutGame() {
         backgroundColor: '#2d3436', padding: '20px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
         transition: 'box-shadow 0.8s, border-color 0.8s', boxShadow: `0 0 60px ${currentGlowColor}`, borderColor: '#636e72' 
       }}>
-        {/* --- HEADER (GG LOGO) --- */}
         <div style={{ backgroundColor: '#000', color: '#fff', padding: '10px 20px', marginBottom: '20px', borderRadius: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px solid #333', boxShadow: 'inset 0 0 10px rgba(0,255,255,0.1)' }}>
           <div style={{ display: 'flex', fontSize: '2rem', fontWeight: '900', fontFamily: 'sans-serif', letterSpacing: '-4px', marginRight: '20px', textShadow: '0 0 5px rgba(255,255,255,0.2)' }}>
               <span style={{ color: '#4cd137' }}>G</span>
@@ -436,7 +439,7 @@ function BreakoutGame() {
               <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
               <div>
                 <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                <button onClick={() => navigate('/leaderboard/breakout')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
               </div>
             </div>
           )}

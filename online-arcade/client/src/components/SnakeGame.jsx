@@ -3,6 +3,7 @@ import useGameSounds from '../hooks/useGameSounds';
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { socket } from '../socket'; // Integrated shared socket
 
 // --- CONFIGURATION ---
 const CANVAS_SIZE = 800; 
@@ -14,22 +15,22 @@ const BASE_VOLUME = 0.4;
 
 // --- 🎵 MUSIC BRACKETS ---
 const MUSIC_STAGES = [
-  { limit: 150,  track: '/music/SnakeGame/stage1.mp3' }, 
-  { limit: 300,  track: '/music/SnakeGame/stage2.mp3' }, 
-  { limit: 600,  track: '/music/SnakeGame/stage3.mp3' }, 
+  { limit: 150,   track: '/music/SnakeGame/stage1.mp3' }, 
+  { limit: 300,   track: '/music/SnakeGame/stage2.mp3' }, 
+  { limit: 600,   track: '/music/SnakeGame/stage3.mp3' }, 
   { limit: 1000, track: '/music/SnakeGame/stage4.mp3' }, 
   { limit: 2000, track: '/music/SnakeGame/stage5.mp3' }, 
   { limit: 99999, track: '/music/SnakeGame/stage6.mp3' } 
 ];
 
-// --- 🔴 STAGE GLOW COLORS (Brightened for Visibility) ---
+// --- 🔴 STAGE GLOW COLORS ---
 const STAGE_COLORS = [
-  'rgba(0, 210, 211, 0.6)',    // Stage 0: Bright Cyan (Start)
-  'rgba(255, 159, 67, 0.7)',   // Stage 1: Orange Warning
-  'rgba(255, 107, 107, 0.8)',  // Stage 2: Salmon Red
-  'rgba(238, 82, 83, 0.9)',    // Stage 3: Bright Red
-  'rgba(214, 48, 49, 1.0)',    // Stage 4: Deep Red
-  'rgba(150, 0, 0, 1.0)'       // Stage 5: Blood Red
+  'rgba(0, 210, 211, 0.6)', 
+  'rgba(255, 159, 67, 0.7)', 
+  'rgba(255, 107, 107, 0.8)',
+  'rgba(238, 82, 83, 0.9)', 
+  'rgba(214, 48, 49, 1.0)', 
+  'rgba(150, 0, 0, 1.0)' 
 ];
 
 // --- 💧 SWEAT RAIN COMPONENT ---
@@ -78,12 +79,11 @@ const SweatRain = () => {
   );
 };
 
-// --- HELPER: CALCULATE STAGE ---
 const getStageIndex = (score) => {
     for (let i = 0; i < MUSIC_STAGES.length; i++) {
         if (score < MUSIC_STAGES[i].limit) return i;
     }
-    return MUSIC_STAGES.length - 1; // Cap at max stage
+    return MUSIC_STAGES.length - 1;
 };
 
 function SnakeGame() {
@@ -96,11 +96,9 @@ function SnakeGame() {
   const [score, setScore] = useState(0);
   const [countdown, setCountdown] = useState(5);
   
-  // Audio State
   const [isMusicMuted, setIsMusicMuted] = useState(() => localStorage.getItem('snake_music_muted') === 'true');
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
   
-  // Refs
   const moveQueue = useRef([]); 
   const currentDir = useRef([0, -1]); 
   const snakeRef = useRef(SNAKE_START);
@@ -123,12 +121,20 @@ function SnakeGame() {
   
   const username = localStorage.getItem('user') || "Anonymous";
 
-  // --- DERIVED STATE (No more useEffect lag for colors!) ---
-  // We calculate the color instantly based on the current score
   const currentStageIndex = getStageIndex(score);
   const currentGlowColor = STAGE_COLORS[currentStageIndex];
 
-  // --- AUTO SCROLL ---
+  // --- NEW: SOCIAL ACTIVITY SYNC ---
+  useEffect(() => {
+    if (gameStatus === 'playing' && !isGameOverRef.current) {
+        // Emit score updates to the social sidebar
+        socket.emit('update_activity', { 
+            status: 'gaming', 
+            game: `Snake (Score: ${score})` 
+        });
+    }
+  }, [score, gameStatus]);
+
   useEffect(() => {
     if (gameContainerRef.current) {
         setTimeout(() => {
@@ -137,7 +143,6 @@ function SnakeGame() {
     }
   }, []);
 
-  // --- SYNC STATE ---
   useEffect(() => {
     isSfxMutedRef.current = isSfxMuted;
     localStorage.setItem('snake_sfx_muted', isSfxMuted);
@@ -154,21 +159,18 @@ function SnakeGame() {
     }
   }, [isMusicMuted, gameStatus]);
 
-  // --- CLEANUP ON UNMOUNT ---
   useEffect(() => {
     return () => {
-      // This runs immediately when you leave the page
       if (musicRef.current) {
         musicRef.current.pause();
-        musicRef.current.currentTime = 0; // Reset track to start
+        musicRef.current.currentTime = 0; 
       }
-      if (fadeIntervalRef.current) {
-        clearInterval(fadeIntervalRef.current);
-      }
+      if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
+      // Reset activity on exit
+      socket.emit('update_activity', { status: 'online', game: null });
     };
   }, []);
 
-  // --- FADER ---
   const fadeAudioTo = (targetVolume, duration = 1000, onComplete) => {
     if (!musicRef.current) return;
     if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
@@ -186,7 +188,6 @@ function SnakeGame() {
     }, 50); 
   };
 
-  // --- 🎵 MUSIC ENGINE (Logic Only) ---
   useEffect(() => {
     if (gameStatus !== 'playing') {
         musicRef.current.pause();
@@ -195,7 +196,6 @@ function SnakeGame() {
 
     const stageIndex = getStageIndex(score);
 
-    // Switch Track Check
     if (currentStageIndexRef.current !== stageIndex) {
         const previousStage = currentStageIndexRef.current;
         currentStageIndexRef.current = stageIndex;
@@ -217,13 +217,10 @@ function SnakeGame() {
         }
     }
 
-    // Tempo Scaling
     const prevLimit = stageIndex === 0 ? 0 : MUSIC_STAGES[stageIndex - 1].limit;
     const nextLimit = MUSIC_STAGES[stageIndex].limit;
     const bracketSize = nextLimit - prevLimit;
     const progressInBracket = Math.min((score - prevLimit) / bracketSize, 1);
-
-    // 1.0x to 1.6x speed scaling
     const newPlaybackRate = 1.0 + (progressInBracket * 0.6);
     
     if (musicRef.current) {
@@ -231,7 +228,6 @@ function SnakeGame() {
     }
   }, [score, gameStatus, isMusicMuted]);
 
-  // --- DRAWING ---
   const lerp = (start, end, alpha) => start + (end - start) * alpha;
 
   const draw = (alpha) => {
@@ -239,7 +235,6 @@ function SnakeGame() {
     context.setTransform(SCALE, 0, 0, SCALE, 0, 0); 
     context.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-    // --- FIX: Safety Check for Invisible Fruit ---
     if (foodRef.current && foodRef.current.length === 2) {
       context.font = "1px Arial"; 
       context.textAlign = "center";
@@ -247,7 +242,6 @@ function SnakeGame() {
       context.fillText(foodEmojiRef.current, foodRef.current[0] + 0.5, foodRef.current[1] + 0.55);
     }
 
-    // Poo
     if (pooDropRef.current > 0) {
         const snake = snakeRef.current;
         const prevSnake = prevSnakeRef.current;
@@ -273,7 +267,6 @@ function SnakeGame() {
         context.restore();
     }
 
-    // Snake
     context.fillStyle = "#2ecc71"; 
     snakeRef.current.forEach((segment, i) => {
       const prevSegment = prevSnakeRef.current[i] || segment;
@@ -289,7 +282,7 @@ function SnakeGame() {
         context.translate(x + 0.5, y + 0.5);
         const dir = currentDir.current;
         let angle = 0;
-        if (dir[1] === 1) angle = 0;             
+        if (dir[1] === 1) angle = 0;              
         if (dir[1] === -1) angle = Math.PI;      
         if (dir[0] === 1) angle = -Math.PI / 2;  
         if (dir[0] === -1) angle = Math.PI / 2;  
@@ -303,7 +296,6 @@ function SnakeGame() {
     });
   };
 
-  // --- GAME LOGIC ---
   const runGameStep = () => {
     if (isGameOverRef.current) return;
     if (pooDropRef.current > 0) pooDropRef.current -= 1;
@@ -318,6 +310,7 @@ function SnakeGame() {
         currentSnake.some(seg => seg[0] === newHead[0] && seg[1] === newHead[1])) {
         
         isGameOverRef.current = true;
+        socket.emit('update_activity', { status: 'online', game: null });
         if(musicRef.current) {
             musicRef.current.pause();
             musicRef.current.currentTime = 0; 
@@ -361,7 +354,6 @@ function SnakeGame() {
     snakeRef.current = currentSnake;
   };
 
-  // --- LOOP ---
   const gameLoopRefWrapper = (time) => {
       if (gameStatus !== 'playing' || isGameOverRef.current) return;
       if (!lastTimeRef.current) lastTimeRef.current = time;
@@ -471,8 +463,6 @@ function SnakeGame() {
         position: 'relative',
         zIndex: 1,
         transition: 'box-shadow 0.8s, border-color 0.8s',
-        // --- FIXED GLOW ---
-        // We use the derived constant 'currentGlowColor' directly here
         boxShadow: `0 0 60px ${currentGlowColor}`,
         borderColor: '#636e72',
       }}>
@@ -527,7 +517,7 @@ function SnakeGame() {
               <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
               <div>
                 <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                <button onClick={() => navigate('/leaderboard')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                <button onClick={() => navigate('/leaderboard/snake')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
               </div>
             </div>
           )}

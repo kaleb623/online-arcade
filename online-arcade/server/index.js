@@ -17,16 +17,8 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.log("❌ MongoDB Error:", err));
 
 // --- 2. MODELS ---
-let User, Score;
-try {
-    User = require('./models/User');
-    Score = require('./models/Score');
-} catch (e) {
-    const userSchema = new mongoose.Schema({ username: String, password: String });
-    User = mongoose.model('User', userSchema);
-    const scoreSchema = new mongoose.Schema({ username: String, game: String, score: Number });
-    Score = mongoose.model('Score', scoreSchema);
-}
+const User = require('./models/User');
+const Score = require('./models/Score');
 
 // --- 3. API ROUTES ---
 app.post('/api/register', async (req, res) => {
@@ -50,6 +42,26 @@ app.post('/api/login', async (req, res) => {
         }
     } catch (err) {
         res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// NEW: PROFILE CUSTOMIZATION ROUTE
+app.post('/api/user/update-profile', async (req, res) => {
+    try {
+        const { username, avatar, statusMessage } = req.body;
+        const updatedUser = await User.findOneAndUpdate(
+            { username },
+            { avatar, statusMessage },
+            { new: true }
+        );
+        
+        if (updatedUser) {
+            res.json({ status: 'ok', avatar: updatedUser.avatar, statusMessage: updatedUser.statusMessage });
+        } else {
+            res.status(404).json({ error: "User not found" });
+        }
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update profile" });
     }
 });
 
@@ -80,18 +92,68 @@ app.get('/api/leaderboard/:game', async (req, res) => {
     }
 });
 
-// --- 4. MULTIPLAYER SOCKETS ---
+// --- 4. MULTIPLAYER & SOCIAL SOCKETS ---
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Track player metadata (usernames) per room
+// Track online users
+const activeUsers = new Map(); 
 const checkersRooms = new Map();
 
 const generateRoomCode = () => Math.random().toString(36).substring(2, 6).toUpperCase();
 
 io.on('connection', (socket) => {
-    console.log(`Checkers⚡ User Connected: ${socket.id}`);
-    
+    console.log(`⚡ New Connection: ${socket.id}`);
+
+    // IDENTITY & SOCIAL
+    socket.on('identify', (username) => {
+        socket.username = username;
+        activeUsers.set(username, {
+            socketId: socket.id,
+            status: 'online',
+            currentGame: null
+        });
+        console.log(`👤 User Identified: ${username}`);
+        
+        // 1. Send the FULL current list ONLY to the person who just logged in
+        const usersList = Array.from(activeUsers.entries()).map(([name, data]) => ({
+            username: name,
+            status: data.status,
+            game: data.currentGame
+        }));
+        socket.emit('initial_user_list', usersList);
+
+        // 2. Broadcast to EVERYONE ELSE that this user is now online
+        socket.broadcast.emit('user_online', { username, status: 'online' }); 
+    });
+
+    socket.on('update_activity', (data) => {
+        if (socket.username && activeUsers.has(socket.username)) {
+            const user = activeUsers.get(socket.username);
+            user.status = data.status || 'online'; 
+            user.currentGame = data.game || null; 
+            
+            io.emit('status_change', {
+                username: socket.username,
+                status: user.status,
+                game: user.currentGame
+            });
+        }
+    });
+
+    // SPECTATING RELAY
+    socket.on('join_spectator', (targetUsername) => {
+        socket.join(`watch_${targetUsername}`);
+        console.log(`👁️  ${socket.username || 'Guest'} started watching ${targetUsername}`);
+    });
+
+    socket.on('stream_game_data', (data) => {
+        if (socket.username) {
+            socket.to(`watch_${socket.username}`).emit('live_stream', data);
+        }
+    });
+
+    // CHECKERS GAME LOGIC
     socket.on('create_room', () => {
         const roomCode = generateRoomCode();
         checkersRooms.set(roomCode, { players: [], names: {} });
@@ -105,7 +167,6 @@ io.on('connection', (socket) => {
         const roomData = checkersRooms.get(roomCode);
         const socketRoom = io.sockets.adapter.rooms.get(roomCode);
 
-        // Allow join if room exists and has < 2 players
         if (roomData && (!socketRoom || socketRoom.size < 2)) {
             socket.join(roomCode);
             roomData.players.push(socket.id);
@@ -118,17 +179,8 @@ io.on('connection', (socket) => {
                     red: roomData.names[p1Id],
                     black: roomData.names[p2Id]
                 };
-
-                io.to(p1Id).emit('game_start', { 
-                    color: 'red', 
-                    room: roomCode, 
-                    names: namesMapping 
-                }); 
-                io.to(p2Id).emit('game_start', { 
-                    color: 'black', 
-                    room: roomCode, 
-                    names: namesMapping 
-                }); 
+                io.to(p1Id).emit('game_start', { color: 'red', room: roomCode, names: namesMapping }); 
+                io.to(p2Id).emit('game_start', { color: 'black', room: roomCode, names: namesMapping }); 
             }
         } else {
             socket.emit('error_joining', 'Room full or invalid');
@@ -143,15 +195,20 @@ io.on('connection', (socket) => {
         io.in(data.room).emit("game_over", { winner: data.winner });
     });
 
+    // DISCONNECT & CLEANUP
     socket.on('disconnect', () => {
-        // Basic cleanup: find rooms the socket was in and remove them
+        if (socket.username) {
+            activeUsers.delete(socket.username);
+            io.emit('user_offline', socket.username);
+            console.log(`📡 User Offline: ${socket.username}`);
+        }
         checkersRooms.forEach((data, code) => {
             if (data.players.includes(socket.id)) checkersRooms.delete(code);
         });
     });
 });
 
-// --- 5. THE CATCH-ALL ---
+// --- 5. STATIC FILES & CATCH-ALL ---
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
 app.get(/(.*)/, (req, res) => {

@@ -1,11 +1,8 @@
 // client/src/components/CheckersGame.jsx
 import { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { socket } from '../socket'; // Use shared global socket
 import confetti from 'canvas-confetti';
-
-const socketUrl = import.meta.env.PROD ? '/' : import.meta.env.VITE_API_URL;
-const socket = io(socketUrl);
 
 // --- CONSTANTS ---
 const EMPTY = 0;
@@ -88,7 +85,6 @@ function CheckersGame() {
   useEffect(() => { boardRef.current = board; }, [board]);
   useEffect(() => { turnRef.current = turn; }, [turn]);
 
-  // --- STYLES (Including Pulse Animation) ---
   const pulseKeyframes = `
     @keyframes piece-glow {
       0% { box-shadow: 0 0 5px rgba(255,255,255,0.2); transform: scale(1); }
@@ -143,21 +139,49 @@ function CheckersGame() {
     return () => clearInterval(timer);
   }, [gameState, winner, myColor]);
 
+  // --- NEW SOCIAL SYNC EFFECT ---
+  useEffect(() => {
+      if (gameState === 'playing' && myColor && playerNames) {
+          const opponent = myColor === 'red' ? playerNames.black : playerNames.red;
+          socket.emit('update_activity', { 
+              status: 'gaming', 
+              game: `checkers vs ${opponent}` 
+          });
+      }
+  }, [gameState, myColor, playerNames]);
+
   useEffect(() => {
     socket.on('room_created', (code) => {
         setRoomCode(code); setGameState('waiting_lobby');
         const user = localStorage.getItem('user') || "Player 1";
         socket.emit('join_room', { roomCode: code, username: user });
     });
+
     socket.on('game_start', (data) => {
-        setMyColor(data.color); setRoomCode(data.room); setPlayerNames(data.names);
-        setGameState('playing'); setBoard(INITIAL_BOARD); setTurn('red');
-        setTimeLeft(25); setWinner(null); setRedLost(0); setBlackLost(0);
+        setMyColor(data.color); 
+        setRoomCode(data.room); 
+        setPlayerNames(data.names);
+        setGameState('playing'); 
+        setBoard(INITIAL_BOARD); 
+        setTurn('red');
+        setTimeLeft(25); 
+        setWinner(null); 
+        setRedLost(0); 
+        setBlackLost(0);
     });
+
     socket.on('opponent_move', (data) => handleMoveLocally(data.from, data.to, false));
     socket.on('game_over', (data) => triggerWin(data.winner));
     socket.on('error_joining', (msg) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 3000); });
-    return () => { socket.off('room_created'); socket.off('game_start'); socket.off('opponent_move'); socket.off('game_over'); socket.off('error_joining'); };
+    
+    return () => { 
+        socket.off('room_created'); 
+        socket.off('game_start'); 
+        socket.off('opponent_move'); 
+        socket.off('game_over'); 
+        socket.off('error_joining');
+        socket.emit('update_activity', { status: 'online', game: null });
+    };
   }, [roomCode]);
 
   const createGame = () => socket.emit('create_room');
@@ -229,11 +253,7 @@ function CheckersGame() {
   };
 
   const deadPieceStyle = (color) => ({ width: '30px', height: '30px', borderRadius: '50%', marginBottom: '5px', background: color === 'red' ? 'radial-gradient(circle at 10px 10px, #ff4d4d, #b30000)' : 'radial-gradient(circle at 10px 10px, #b2bec3, #636e72)', border: '2px solid #333' });
-  
-  const verticalNameStyle = { 
-    writingMode: 'vertical-rl', textTransform: 'uppercase', fontWeight: '900', letterSpacing: '4px', color: '#fff', height: '480px', textAlign: 'center',
-    textShadow: '2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000', fontSize: '1.2rem'
-  };
+  const verticalNameStyle = { writingMode: 'vertical-rl', textTransform: 'uppercase', fontWeight: '900', letterSpacing: '4px', color: '#fff', height: '480px', textAlign: 'center', textShadow: '2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000', fontSize: '1.2rem' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', backgroundColor: '#000', color: '#fff', fontFamily: "'Courier New', Courier, monospace" }}>
@@ -300,9 +320,7 @@ function CheckersGame() {
                                             width: '40px', height: '40px', borderRadius: '50%', 
                                             background: (cell === RED_PAWN || cell === RED_KING) ? 'radial-gradient(circle at 10px 10px, #ff4d4d, #b30000)' : 'radial-gradient(circle at 10px 10px, #b2bec3, #636e72)', 
                                             border: (selectedPiece?.r === r && selectedPiece?.c === c) ? '4px solid rgb(0, 210, 211)' : '2px solid #000',
-                                            color: (cell === RED_PAWN || cell === RED_KING) ? 'rgba(76, 209, 55, 0.8)' : 'rgba(0, 210, 211, 0.8)',
-                                            animation: shouldGlow ? 'piece-glow 2s infinite ease-in-out' : 'none',
-                                            transition: 'transform 0.2s ease-in-out'
+                                            animation: shouldGlow ? 'piece-glow 2s infinite ease-in-out' : 'none'
                                         }} />
                                     )}
                                 </div>
