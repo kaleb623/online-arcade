@@ -15,6 +15,7 @@ function Home() {
       title: "MULTIPLAYER BATTLES",
       games: [
         { path: "/game/checkers", name: "CHECKERS", icon: "🏁", desc: "Strategy & Skill." },
+        { path: "/game/connect4", name: "CONNECT 4", icon: "🔴", desc: "Four in a row." }, // <--- ADDED
       ]
     }
   ];
@@ -28,20 +29,16 @@ function Home() {
           color: #fff;
           display: flex;
           flex-direction: column;
-          /* CENTER CONTENT ADDITIONS */
           align-items: center; 
           text-align: center;
-          /* ------------------------ */
           padding: 35px;
           border-radius: 16px;
           transition: transform 0.2s;
           
-          /* THE PERMANENT GRADIENT BORDER TRICK */
           background: 
             linear-gradient(#252525, #252525) padding-box,
             linear-gradient(90deg, #4cd137, #00d2d3) border-box;
             
-          /* Make the border transparent so the gradient shines through */
           border: 2px solid transparent;
         }
 

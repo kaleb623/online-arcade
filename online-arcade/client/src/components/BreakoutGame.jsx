@@ -2,11 +2,11 @@
 import useGameSounds from '../hooks/useGameSounds'; 
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { socket } from '../socket'; // Integrated shared socket
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { socket } from '../socket'; 
 
 // --- CONFIGURATION ---
-const CANVAS_SIZE = 800; 
+const CANVAS_SIZE = 800; // Kept large as requested
 const PADDLE_WIDTH = 120;
 const PADDLE_HEIGHT = 20;
 const BALL_RADIUS = 8;
@@ -18,6 +18,7 @@ const BRICK_OFFSET_LEFT = 35;
 const BRICK_WIDTH = (CANVAS_SIZE - (BRICK_OFFSET_LEFT * 2) - (BRICK_PADDING * (BRICK_COL_COUNT - 1))) / BRICK_COL_COUNT;
 
 const BASE_VOLUME = 0.4;
+const BROADCAST_RATE = 50; 
 
 const MUSIC_STAGES = [
   { limit: 500,   track: '/music/SnakeGame/stage1.mp3' }, 
@@ -33,7 +34,6 @@ const STAGE_COLORS = [
   'rgba(238, 82, 83, 0.9)', 'rgba(214, 48, 49, 1.0)', 'rgba(150, 0, 0, 1.0)'
 ];
 
-// --- 🎹 THE SYNTHESIZER ---
 const AudioContextClass = (window.AudioContext || window.webkitAudioContext);
 const audioCtx = new AudioContextClass();
 
@@ -95,9 +95,14 @@ function BreakoutGame() {
   const canvasRef = useRef();
   const gameContainerRef = useRef(null); 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { playSound } = useGameSounds('BreakoutGame'); 
 
-  const [gameStatus, setGameStatus] = useState('idle');
+  const username = localStorage.getItem('user') || "Anonymous";
+  const paramSpectate = searchParams.get('spectate');
+  const spectatingTarget = (paramSpectate && paramSpectate !== username) ? paramSpectate : null;
+
+  const [gameStatus, setGameStatus] = useState(spectatingTarget ? 'spectating' : 'idle');
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [countdown, setCountdown] = useState(3);
@@ -106,7 +111,11 @@ function BreakoutGame() {
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
   
   const paddleRef = useRef({ x: (CANVAS_SIZE - PADDLE_WIDTH) / 2 });
+  const prevPaddleRef = useRef({ x: (CANVAS_SIZE - PADDLE_WIDTH) / 2 });
+
   const ballRef = useRef({ x: CANVAS_SIZE/2, y: CANVAS_SIZE - 30, dx: 2.72, dy: -2.72 });
+  const prevBallRef = useRef({ x: CANVAS_SIZE/2, y: CANVAS_SIZE - 30 });
+
   const bricksRef = useRef(
       Array.from({ length: BRICK_COL_COUNT }, () => 
           Array.from({ length: BRICK_ROW_COUNT }, () => ({ x: 0, y: 0, status: 1 }))
@@ -122,27 +131,72 @@ function BreakoutGame() {
   const currentStageIndexRef = useRef(-1); 
   const fadeIntervalRef = useRef(null); 
   const isGameOverRef = useRef(false);
-  const username = localStorage.getItem('user') || "Anonymous";
+  
+  const lastBroadcastTime = useRef(0);
+  const lastFrameTime = useRef(0);
+  const accumulatorRef = useRef(0);
 
   const currentStageIndex = getStageIndex(score);
   const currentGlowColor = STAGE_COLORS[currentStageIndex];
 
-  // --- NEW: SOCIAL ACTIVITY SYNC ---
   useEffect(() => {
-    if (gameStatus === 'playing' && !isGameOverRef.current) {
+    if (spectatingTarget) {
+        socket.emit('join_spectator', spectatingTarget);
+        console.log(`Joined spectator room for: ${spectatingTarget}`);
+
+        socket.on('live_stream', (data) => {
+            prevPaddleRef.current = { ...paddleRef.current };
+            prevBallRef.current = { ...ballRef.current };
+
+            paddleRef.current = data.paddle;
+            ballRef.current = data.ball;
+            bricksRef.current = data.bricks;
+            
+            if(scoreRef.current !== data.score) {
+                scoreRef.current = data.score;
+                setScore(data.score);
+            }
+            if(lives !== data.lives) setLives(data.lives);
+
+            if (data.status === 'gameover' && gameStatus !== 'gameover') {
+                setGameStatus('gameover');
+            } else if (data.status === 'playing' && gameStatus !== 'playing') {
+                setGameStatus('playing');
+            }
+
+            accumulatorRef.current = 0;
+        });
+
+        socket.emit('update_activity', { status: 'watching', game: `Breakout (${spectatingTarget})` });
+
+        return () => {
+            socket.off('live_stream');
+            socket.emit('update_activity', { status: 'online', game: null });
+        };
+    } else if (gameStatus === 'playing' && !isGameOverRef.current) {
         socket.emit('update_activity', { 
             status: 'gaming', 
             game: `Breakout (Score: ${score})` 
         });
     }
-  }, [score, gameStatus]);
+  }, [score, gameStatus, spectatingTarget]);
 
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(requestRef.current);
-      socket.emit('update_activity', { status: 'online', game: null });
-    };
-  }, []);
+  const broadcastState = (overrideStatus = null) => {
+    if (!spectatingTarget) {
+        const now = Date.now();
+        if (now - lastBroadcastTime.current > BROADCAST_RATE) {
+            socket.emit('stream_game_data', {
+                paddle: paddleRef.current,
+                ball: ballRef.current,
+                bricks: bricksRef.current,
+                score: scoreRef.current,
+                lives: lives,
+                status: overrideStatus || (isGameOverRef.current ? 'gameover' : gameStatus)
+            });
+            lastBroadcastTime.current = now;
+        }
+    }
+  };
 
   const initBricks = () => {
       const newBricks = [];
@@ -174,6 +228,7 @@ function BreakoutGame() {
         musicRef.current.currentTime = 0;
       }
       if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
+      socket.emit('update_activity', { status: 'online', game: null });
     };
   }, []);
   
@@ -202,7 +257,7 @@ function BreakoutGame() {
   };
 
   useEffect(() => {
-    if (gameStatus !== 'playing') { musicRef.current.pause(); return; }
+    if (gameStatus !== 'playing' && gameStatus !== 'spectating') { musicRef.current.pause(); return; }
     const stageIndex = getStageIndex(score);
 
     if (currentStageIndexRef.current !== stageIndex) {
@@ -232,7 +287,9 @@ function BreakoutGame() {
 
   }, [score, gameStatus, isMusicMuted]);
 
-  const draw = () => {
+  const lerp = (start, end, alpha) => start + (end - start) * alpha;
+
+  const draw = (interpolationAlpha = 1) => {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
     ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
@@ -254,8 +311,13 @@ function BreakoutGame() {
         }
     }
 
+    let paddleX = paddleRef.current.x;
+    if (spectatingTarget) {
+        paddleX = lerp(prevPaddleRef.current.x, paddleRef.current.x, interpolationAlpha);
+    }
+
     ctx.beginPath();
-    ctx.rect(paddleRef.current.x, CANVAS_SIZE - PADDLE_HEIGHT - 10, PADDLE_WIDTH, PADDLE_HEIGHT);
+    ctx.rect(paddleX, CANVAS_SIZE - PADDLE_HEIGHT - 10, PADDLE_WIDTH, PADDLE_HEIGHT);
     ctx.fillStyle = "#00d2d3";
     ctx.shadowBlur = 15;
     ctx.shadowColor = "#00d2d3";
@@ -263,15 +325,22 @@ function BreakoutGame() {
     ctx.shadowBlur = 0; 
     ctx.closePath();
 
+    let ballX = ballRef.current.x;
+    let ballY = ballRef.current.y;
+    if (spectatingTarget) {
+        ballX = lerp(prevBallRef.current.x, ballRef.current.x, interpolationAlpha);
+        ballY = lerp(prevBallRef.current.y, ballRef.current.y, interpolationAlpha);
+    }
+
     ctx.beginPath();
-    ctx.arc(ballRef.current.x, ballRef.current.y, BALL_RADIUS, 0, Math.PI*2);
+    ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI*2);
     ctx.fillStyle = "#fff";
     ctx.fill();
     ctx.closePath();
   };
 
   const update = () => {
-    if (isGameOverRef.current) return;
+    if (isGameOverRef.current || spectatingTarget) return;
 
     if(rightPressed.current && paddleRef.current.x < CANVAS_SIZE - PADDLE_WIDTH) {
         paddleRef.current.x += 7;
@@ -328,31 +397,46 @@ function BreakoutGame() {
             }
         }
     }
+
+    broadcastState();
   };
 
   const resetBall = () => {
     ballRef.current = { x: CANVAS_SIZE/2, y: CANVAS_SIZE - 40, dx: 2.72, dy: -2.72 };
   };
 
-  const loop = () => {
-    if(gameStatus === 'playing' && !isGameOverRef.current) {
+  const loop = (time) => {
+    if(isGameOverRef.current) return;
+
+    if (!lastFrameTime.current) lastFrameTime.current = time;
+    const deltaTime = time - lastFrameTime.current;
+    lastFrameTime.current = time;
+
+    if (!spectatingTarget && gameStatus === 'playing') {
         update();
-        draw();
-        requestRef.current = requestAnimationFrame(loop);
+        draw(1); 
+    } 
+    else if (spectatingTarget && (gameStatus === 'playing' || gameStatus === 'spectating')) {
+        accumulatorRef.current += deltaTime;
+        let alpha = Math.min(accumulatorRef.current / BROADCAST_RATE, 1);
+        draw(alpha);
     }
+
+    requestRef.current = requestAnimationFrame(loop);
   };
 
   useEffect(() => {
-    if(gameStatus === 'playing') {
+    if(gameStatus === 'playing' || gameStatus === 'spectating') {
         requestRef.current = requestAnimationFrame(loop);
     } else if (gameStatus === 'idle' || gameStatus === 'countdown') {
-        draw(); 
+        draw(1); 
     }
     return () => cancelAnimationFrame(requestRef.current);
-  }, [gameStatus, lives]); 
+  }, [gameStatus, lives, spectatingTarget]); 
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+        if(spectatingTarget) return; 
         if(e.key === "Right" || e.key === "ArrowRight") rightPressed.current = true;
         if(e.key === "Left" || e.key === "ArrowLeft") leftPressed.current = true;
     };
@@ -366,9 +450,10 @@ function BreakoutGame() {
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [spectatingTarget]);
 
   const startGame = () => {
+    if(spectatingTarget) return;
     if (audioCtx.state === 'suspended') audioCtx.resume();
     initBricks();
     setGameStatus('countdown');
@@ -380,14 +465,16 @@ function BreakoutGame() {
     currentStageIndexRef.current = -1;
     resetBall();
     if(fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
+    
+    broadcastState('playing');
   };
 
   const endGame = () => {
     setGameStatus('gameover');
-    socket.emit('update_activity', { status: 'online', game: null });
-    if(username !== "Anonymous") {
+    if(username !== "Anonymous" && !spectatingTarget) {
         axios.post('/api/score', { username, game: 'breakout', score: scoreRef.current }).catch(console.error);
     }
+    broadcastState('gameover');
   };
 
   useEffect(() => {
@@ -405,11 +492,11 @@ function BreakoutGame() {
   const countdownStyle = { fontSize: '10rem', color: '#ffeaa7', fontWeight: '800', textShadow: '0 0 20px rgba(255, 234, 167, 0.5)', animation: 'pulse 1s infinite' };
 
   return (
-    <div ref={gameContainerRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', paddingBottom: '50px', fontFamily: "'Courier New', Courier, monospace" }}>
+    <div ref={gameContainerRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '10px', paddingBottom: '10px', fontFamily: "'Courier New', Courier, monospace" }}>
       {score >= 2000 && <SweatRain />}
 
       <div style={{ 
-        backgroundColor: '#2d3436', padding: '20px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
+        backgroundColor: '#2d3436', padding: '10px', borderRadius: '15px', border: '5px solid #636e72', width: 'fit-content', position: 'relative', zIndex: 1, 
         transition: 'box-shadow 0.8s, border-color 0.8s', boxShadow: `0 0 60px ${currentGlowColor}`, borderColor: '#636e72' 
       }}>
         <div style={{ backgroundColor: '#000', color: '#fff', padding: '10px 20px', marginBottom: '20px', borderRadius: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px solid #333', boxShadow: 'inset 0 0 10px rgba(0,255,255,0.1)' }}>
@@ -417,34 +504,52 @@ function BreakoutGame() {
               <span style={{ color: '#4cd137' }}>G</span>
               <span style={{ color: '#00d2d3' }}>G</span>
           </div>
-          <div style={{ fontSize: '1.5rem' }}>SCORE: {String(score).padStart(4, '0')} | ❤️ {lives}</div>
+          
+          <div style={{ fontSize: '1.5rem' }}>
+            {spectatingTarget ? `WATCHING: ${spectatingTarget.toUpperCase()}` : `SCORE: ${String(score).padStart(4, '0')} | ❤️ ${lives}`}
+          </div>
+
           <div style={{ display: 'flex', gap: '10px', marginLeft: '15px' }}>
               <button onClick={() => setIsMusicMuted(!isMusicMuted)} style={iconButtonStyle}>{isMusicMuted ? '🔇' : '🎵'}</button>
               <button onClick={() => setIsSfxMuted(!isSfxMuted)} style={iconButtonStyle}>{isSfxMuted ? '🔇' : '🔊'}</button>
           </div>
         </div>
 
-        <div style={{ position: 'relative', border: '10px solid #111', borderRadius: '4px' }}>
+        <div style={{ position: 'relative', border: '4px solid #111', borderRadius: '4px' }}>
           <canvas ref={canvasRef} width={`${CANVAS_SIZE}px`} height={`${CANVAS_SIZE}px`} style={{ display: 'block', backgroundColor: '#000' }} />
           
-          {gameStatus === 'idle' && (
+          {gameStatus === 'idle' && !spectatingTarget && (
             <div style={overlayStyle}><button onClick={startGame} style={buttonStyle}>INSERT COIN (START)</button></div>
           )}
+
+          {gameStatus === 'spectating' && score === 0 && (
+             <div style={{...overlayStyle, backgroundColor: 'transparent', pointerEvents: 'none'}}>
+                <p style={{ color: '#fff', textShadow: '0 0 5px #000' }}>WAITING FOR SIGNAL...</p>
+             </div>
+          )}
+
           {gameStatus === 'countdown' && (
             <div style={overlayStyle}><div style={countdownStyle}>{countdown}</div><p style={{ color: '#fff', fontSize: '1.5rem' }}>GET READY</p></div>
           )}
+
           {gameStatus === 'gameover' && (
             <div style={overlayStyle}>
               <h3 style={{ color: '#ff7675', fontSize: '3rem', margin: 0 }}>GAME OVER</h3>
               <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
-              <div>
-                <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                <button onClick={() => navigate('/leaderboard/breakout')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
-              </div>
+              {!spectatingTarget ? (
+                  <div>
+                    <button onClick={startGame} style={buttonStyle}>RETRY</button>
+                    <button onClick={() => navigate('/leaderboard/breakout')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                  </div>
+              ) : (
+                  <div style={{ color: '#ccc', marginTop: '20px' }}>STREAM ENDED</div>
+              )}
             </div>
           )}
         </div>
-        <div style={{ textAlign: 'center', color: '#b2bec3', marginTop: '10px', fontSize: '0.8rem' }}>LEFT/RIGHT ARROWS TO MOVE</div>
+        <div style={{ textAlign: 'center', color: '#b2bec3', marginTop: '10px', fontSize: '0.8rem' }}>
+            {spectatingTarget ? "LIVE FEED - CONTROLS DISABLED" : "LEFT/RIGHT ARROWS TO MOVE"}
+        </div>
       </div>
     </div>
   );

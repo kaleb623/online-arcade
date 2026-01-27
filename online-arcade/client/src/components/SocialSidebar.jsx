@@ -41,16 +41,44 @@ const SocialSidebar = () => {
     };
   }, []);
 
-  const parseActivity = (gameString, status) => {
-    if (!gameString) return { slug: '', target: null };
-    const slug = gameString.split(' ')[0].toLowerCase();
-    let target = null;
-    if (status === 'watching') {
-      const match = gameString.match(/\(([^)]+)\)/); 
-      if (match) target = match[1];
+  // --- HELPER: Parse Game Activity ---
+  const getActivityInfo = (gameString) => {
+    if (!gameString) return { slug: '', target: null, isVsMe: false };
+
+    // 1. Check if they are playing against ME
+    const isVsMe = gameString.includes(` vs ${currentUser}`);
+
+    // 2. Extract Slug
+    let slug = '';
+    const lower = gameString.toLowerCase();
+    
+    if (lower.startsWith('connect 4')) {
+        slug = 'connect4'; 
+    } else {
+        slug = gameString.split(' ')[0].toLowerCase();
     }
-    return { slug, target };
+
+    // 3. Extract Spectator Target (if they are watching someone)
+    // Format: "GameName (Target)"
+    let target = null;
+    const match = gameString.match(/\(([^)]+)\)/); // Captures text inside ()
+    if (match) target = match[1];
+
+    return { slug, target, isVsMe };
   };
+
+  // --- HELPER: Find MY Opponent ---
+  // If I am playing "Connect 4 vs PlayerB", returns "PlayerB"
+  const getMyOpponent = () => {
+      const myProfile = onlineUsers.find(u => u.username === currentUser);
+      if (!myProfile || !myProfile.game) return null;
+      if (myProfile.game.includes(' vs ')) {
+          return myProfile.game.split(' vs ')[1];
+      }
+      return null;
+  };
+
+  const myOpponent = getMyOpponent();
 
   return (
     <div style={{ 
@@ -67,18 +95,20 @@ const SocialSidebar = () => {
       {onlineUsers.map(u => {
         const isMe = u.username === currentUser;
         const isWatching = u.status === 'watching';
-        const { slug, target } = parseActivity(u.game, u.status);
+        const { slug, target, isVsMe } = getActivityInfo(u.game);
 
-        // LOGIC: Hide button if:
-        // 1. It is ME (Cannot watch myself)
-        // 2. I am already spectating THIS user
-        // 3. I am already spectating the person THEY are watching (loop prevention)
-        const hideButton = isMe || 
-                           (currentSpectatingTarget === u.username) || 
-                           (isWatching && currentSpectatingTarget === target);
+        // LOGIC: Hide the Action Button if...
+        const hideButton = 
+            isMe ||                                             // 1. It is ME
+            (currentSpectatingTarget === u.username) ||         // 2. I am already directly watching this user
+            isVsMe ||                                           // 3. They are playing against ME
+            (isWatching && currentSpectatingTarget === target) || // 4. I am watching the person THEY are watching (loop)
+            (isWatching && target === currentUser) ||           // 5. They are watching ME (NEW FIX)
+            (isWatching && target === myOpponent);              // 6. They are watching my opponent (NEW FIX)
 
         return (
           <div key={u.username} style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Status Dot */}
             <div style={{ 
               width: '10px', height: '10px', borderRadius: '50%', 
               backgroundColor: u.game ? '#4cd137' : '#7f8c8d', 
@@ -104,6 +134,7 @@ const SocialSidebar = () => {
                   'In Menu'
                 )}
 
+                {/* THE ACTION BUTTON */}
                 {u.game && !hideButton && (
                   <button 
                     onClick={() => {
@@ -112,7 +143,7 @@ const SocialSidebar = () => {
                     }}
                     style={{ 
                       marginLeft: '10px', background: 'none', border: 'none', 
-                      color: isWatching ? '#fff' : '#00d2d3',
+                      color: isWatching ? '#fff' : '#00d2d3', 
                       cursor: 'pointer', textDecoration: 'underline', 
                       padding: 0, fontSize: '0.7rem', fontWeight: 'bold'
                     }}

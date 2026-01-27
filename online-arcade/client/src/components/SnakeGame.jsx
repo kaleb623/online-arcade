@@ -6,14 +6,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { socket } from '../socket'; 
 
 // --- CONFIGURATION ---
-const CANVAS_SIZE = 800; 
+const CANVAS_SIZE = 600; 
 const SCALE = 20;
 const TICK_RATE = 80; 
-const SNAKE_START = [[20, 20], [20, 21]]; 
+const SNAKE_START = [[10, 10], [10, 11]]; 
 const CHOMP_COOLDOWN = 15000; 
 const BASE_VOLUME = 0.4;
 
-// --- 🎵 MUSIC BRACKETS ---
 const MUSIC_STAGES = [
   { limit: 150,   track: '/music/SnakeGame/stage1.mp3' }, 
   { limit: 300,   track: '/music/SnakeGame/stage2.mp3' }, 
@@ -32,46 +31,25 @@ const STAGE_COLORS = [
   'rgba(150, 0, 0, 1.0)' 
 ];
 
-// --- 💧 SWEAT RAIN COMPONENT ---
 const SweatRain = () => {
   const [drops, setDrops] = useState([]);
-
   useEffect(() => {
     const interval = setInterval(() => {
       const id = Date.now();
       const isLeft = Math.random() < 0.5;
       const randomX = isLeft ? Math.random() * 20 : 80 + (Math.random() * 20); 
-
-      const newDrop = {
-        id,
-        left: `${randomX}vw`,
-        animationDuration: `${0.8 + Math.random()}s`, 
-        opacity: 0.4 + Math.random() * 0.6
-      };
+      const newDrop = { id, left: `${randomX}vw`, animationDuration: `${0.8 + Math.random()}s`, opacity: 0.4 + Math.random() * 0.6 };
       setDrops((prev) => [...prev, newDrop]);
       setTimeout(() => setDrops((prev) => prev.filter((d) => d.id !== id)), 2000);
     }, 100); 
-
     return () => clearInterval(interval);
   }, []);
-
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
-      <style>{`
-          @keyframes fall {
-            0% { transform: translateY(-50px); opacity: 0; }
-            20% { opacity: 1; }
-            100% { transform: translateY(110vh); opacity: 0; }
-          }
-      `}</style>
+      <style>{`@keyframes fall { 0% { transform: translateY(-50px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(110vh); opacity: 0; } }`}</style>
       {drops.map((drop) => (
-        <div key={drop.id} style={{
-            position: 'absolute', top: -50, left: drop.left,
-            animation: `fall ${drop.animationDuration} linear forwards`, opacity: drop.opacity
-          }}>
-          <svg width="30" height="45" viewBox="0 0 24 24" fill="#00d2d3" style={{ filter: 'drop-shadow(0 0 5px #00d2d3)' }}>
-             <path d="M12 0C12 0 0 10 0 15C0 20 5 24 12 24C19 24 24 20 24 15C24 10 12 0 12 0Z" />
-          </svg>
+        <div key={drop.id} style={{ position: 'absolute', top: -50, left: drop.left, animation: `fall ${drop.animationDuration} linear forwards`, opacity: drop.opacity }}>
+          <svg width="30" height="45" viewBox="0 0 24 24" fill="#00d2d3" style={{ filter: 'drop-shadow(0 0 5px #00d2d3)' }}><path d="M12 0C12 0 0 10 0 15C0 20 5 24 12 24C19 24 24 20 24 15C24 10 12 0 12 0Z" /></svg>
         </div>
       ))}
     </div>
@@ -92,7 +70,9 @@ function SnakeGame() {
   const [searchParams] = useSearchParams();
   const { playSound } = useGameSounds('SnakeGame');
 
-  const spectatingTarget = searchParams.get('spectate');
+  const username = localStorage.getItem('user') || "Anonymous";
+  const paramSpectate = searchParams.get('spectate');
+  const spectatingTarget = (paramSpectate && paramSpectate !== username) ? paramSpectate : null;
 
   const [gameStatus, setGameStatus] = useState(spectatingTarget ? 'spectating' : 'idle');
   const [score, setScore] = useState(0);
@@ -121,28 +101,40 @@ function SnakeGame() {
   const foodEmojiRef = useRef('🍆'); 
   const pooDropRef = useRef(0); 
   
-  const username = localStorage.getItem('user') || "Anonymous";
-
   const currentStageIndex = getStageIndex(score);
   const currentGlowColor = STAGE_COLORS[currentStageIndex];
 
-  // --- SOCIAL & SPECTATOR SYNC ---
+  // --- 1. SPECTATOR & SOCIAL SYNC ---
   useEffect(() => {
     if (spectatingTarget) {
         socket.emit('join_spectator', spectatingTarget);
         console.log(`Joined spectator room for: ${spectatingTarget}`);
 
         socket.on('live_stream', (data) => {
+            // SMOOTHING MAGIC: 
+            // 1. Capture where the snake WAS before this update
+            prevSnakeRef.current = snakeRef.current;
+            
+            // 2. Update where the snake IS NOW
             snakeRef.current = data.snake;
             foodRef.current = data.food;
             scoreRef.current = data.score;
             foodEmojiRef.current = data.emoji;
-            
-            // FIX: Update the direction so the head rotates correctly
             if (data.dir) currentDir.current = data.dir; 
             
+            // 3. Reset the interpolation timer
+            // This tells the draw loop: "Start animating from 'prev' to 'current' right now."
+            accumulatorRef.current = 0; 
+
+            if (data.status === 'gameover' && gameStatus !== 'gameover') {
+                setGameStatus('gameover');
+            } else if (data.status === 'playing' && gameStatus !== 'playing') {
+                setGameStatus('playing');
+            }
+
             setScore(data.score);
-            draw(1);
+            // NOTE: We do NOT call draw(1) here anymore. 
+            // We let the game loop handle the smooth transition.
         });
 
         socket.emit('update_activity', { status: 'watching', game: `Snake (${spectatingTarget})` });
@@ -159,7 +151,20 @@ function SnakeGame() {
     }
   }, [score, gameStatus, spectatingTarget]);
 
-  // --- STANDARD GAME LOGIC ---
+  // --- 2. BROADCAST HELPER ---
+  const broadcastState = (overrideStatus = null) => {
+    if (!spectatingTarget) {
+        socket.emit('stream_game_data', {
+            snake: snakeRef.current,
+            food: foodRef.current,
+            score: scoreRef.current,
+            emoji: foodEmojiRef.current,
+            dir: currentDir.current,
+            status: overrideStatus || (isGameOverRef.current ? 'gameover' : gameStatus)
+        });
+    }
+  };
+
   useEffect(() => {
     if (gameContainerRef.current) {
         setTimeout(() => {
@@ -297,6 +302,10 @@ function SnakeGame() {
       const dist = Math.abs(segment[0] - prevSegment[0]) + Math.abs(segment[1] - prevSegment[1]);
       let x = segment[0];
       let y = segment[1];
+      
+      // Interpolation happens here. 
+      // If we are spectating, 'alpha' is (time_since_packet / 80ms).
+      // This smooths the 12fps server updates into 60fps visuals.
       if (dist < 2) { 
         x = lerp(prevSegment[0], segment[0], alpha);
         y = lerp(prevSegment[1], segment[1], alpha);
@@ -304,15 +313,12 @@ function SnakeGame() {
       if (i === 0) {
         context.save();
         context.translate(x + 0.5, y + 0.5);
-        
-        // --- ROTATION FIX ---
         const dir = currentDir.current;
         let angle = 0;
         if (dir[1] === 1) angle = 0;              
         if (dir[1] === -1) angle = Math.PI;      
         if (dir[0] === 1) angle = -Math.PI / 2;  
         if (dir[0] === -1) angle = Math.PI / 2;  
-        
         context.rotate(angle);
         context.font = "1.2px Arial"; 
         context.fillText("👅", 0, 0.1); 
@@ -382,18 +388,9 @@ function SnakeGame() {
     }
     snakeRef.current = currentSnake;
 
-    // --- EMIT GAME DATA FOR SPECTATORS ---
-    socket.emit('stream_game_data', {
-        snake: snakeRef.current,
-        food: foodRef.current,
-        score: scoreRef.current,
-        emoji: foodEmojiRef.current,
-        dir: currentDir.current // <--- FIX: SENDING DIRECTION NOW
-    });
+    broadcastState();
   };
 
-  // ... (Rest of the file remains exactly the same as before)
-  
   const gameLoopRefWrapper = (time) => {
       if ((gameStatus !== 'playing' && gameStatus !== 'spectating') || isGameOverRef.current) return;
       
@@ -403,13 +400,22 @@ function SnakeGame() {
       if (deltaTime > 250) deltaTime = 250; 
       accumulatorRef.current += deltaTime;
       
-      while (accumulatorRef.current >= TICK_RATE) {
-          if (moveQueue.current.length > 0) currentDir.current = moveQueue.current.shift();
-          runGameStep(); 
-          if (isGameOverRef.current) break;
-          accumulatorRef.current -= TICK_RATE;
-      }
+      if (!spectatingTarget) {
+          // PLAYER MODE: Consume accumulated time in 80ms chunks
+          while (accumulatorRef.current >= TICK_RATE) {
+              if (moveQueue.current.length > 0) currentDir.current = moveQueue.current.shift();
+              runGameStep(); 
+              if (isGameOverRef.current) break;
+              accumulatorRef.current -= TICK_RATE;
+          }
+      } 
+      // SPECTATOR MODE: We do NOT consume the accumulator. 
+      // It acts as a stopwatch counting up from 0 to 80ms between packets.
+      
       if((gameStatus === 'playing' || gameStatus === 'spectating') && !isGameOverRef.current) {
+          // Both modes use alpha for interpolation.
+          // Player: alpha = fraction of tick remaining
+          // Spectator: alpha = fraction of time since last packet
           draw(accumulatorRef.current / TICK_RATE);
           requestRef.current = requestAnimationFrame(gameLoopRefWrapper);
       }
@@ -476,6 +482,8 @@ function SnakeGame() {
     lastTimeRef.current = null;
     lastChompTimeRef.current = 0;
     draw(1);
+
+    broadcastState('playing'); 
   };
 
   const endGame = () => {
@@ -484,6 +492,7 @@ function SnakeGame() {
         axios.post('/api/score', { username, game: 'snake', score: scoreRef.current })
             .catch(err => console.error(err));
     }
+    broadcastState('gameover');
   };
 
   return (
@@ -492,8 +501,8 @@ function SnakeGame() {
         style={{ 
             display: 'flex', 
             justifyContent: 'center', 
-            marginTop: '40px', 
-            paddingBottom: '50px', 
+            marginTop: '15px',
+            paddingBottom: '20px', 
             fontFamily: "'Courier New', Courier, monospace",
         }}
     >
@@ -501,7 +510,7 @@ function SnakeGame() {
 
       <div style={{ 
         backgroundColor: '#2d3436', 
-        padding: '20px', 
+        padding: '15px', 
         borderRadius: '15px', 
         border: '5px solid #636e72',
         width: 'fit-content',

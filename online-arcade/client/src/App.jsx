@@ -9,6 +9,7 @@ import SnakeGame from './components/SnakeGame';
 import BreakoutGame from './components/BreakoutGame'; 
 import TetrisGame from './components/TetrisGame';
 import CheckersGame from './components/CheckersGame';
+import Connect4Game from './components/Connect4Game'; // <--- IMPORT
 import ProtectedRoute from './components/ProtectedRoute';
 import SocialSidebar from './components/SocialSidebar';
 
@@ -31,7 +32,7 @@ function App() {
 
   return (
     <div style={{ 
-      backgroundColor: '#181818', // New Charcoal Body Color
+      backgroundColor: '#181818', 
       color: '#fff', 
       height: '100vh', 
       width: '100vw',
@@ -41,14 +42,13 @@ function App() {
       overflow: 'hidden' 
     }}>
       
-      {/* NAVBAR */}
       <nav style={{ 
-        height: '80px',
+        height: '60px', 
         padding: '0 30px', 
         background: '#111', 
         borderBottom: '1px solid #333', 
         display: 'flex', 
-        justifyContent: 'space-between',
+        justifyContent: 'space-between', 
         alignItems: 'center', 
         flexShrink: 0,
         position: 'relative',
@@ -67,7 +67,7 @@ function App() {
           transform: 'translateX(-50%)', 
           display: 'flex', 
           fontWeight: '900', 
-          fontSize: '3rem', 
+          fontSize: '2.5rem', 
           letterSpacing: '-4px' 
         }}>
            <span style={{ color: '#4cd137', textShadow: '0 0 15px #4cd137' }}>G</span>
@@ -77,8 +77,8 @@ function App() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
           {user && user !== "Anonymous" ? (
             <div style={{ textAlign: 'right' }}>
-              <span style={{ color: '#dfe6e9', marginRight: '15px' }}>Welcome, <b>{user}</b></span>
-              <button onClick={handleLogout} style={{ padding: '5px 12px', background: '#d63031', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>
+              <span style={{ color: '#dfe6e9', marginRight: '15px', fontSize: '0.9rem' }}>Welcome, <b>{user}</b></span>
+              <button onClick={handleLogout} style={{ padding: '4px 10px', background: '#d63031', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}>
                 LOGOUT
               </button>
             </div>
@@ -93,11 +93,10 @@ function App() {
           flex: 1, 
           height: '100%',
           overflowY: 'auto', 
-          padding: '40px', // More breathing room
+          padding: '20px', 
           boxSizing: 'border-box',
           position: 'relative'
         }}>
-          {/* Internal Scrollbar Styling */}
           <style>{`
             main::-webkit-scrollbar { width: 10px; }
             main::-webkit-scrollbar-track { background: #181818; }
@@ -113,6 +112,7 @@ function App() {
             <Route path="/game/breakout" element={<ProtectedRoute><BreakoutGame /></ProtectedRoute>} />
             <Route path="/game/tetris" element={<ProtectedRoute><TetrisGame /></ProtectedRoute>} />
             <Route path="/game/checkers" element={<CheckersGame />} />
+            <Route path="/game/connect4" element={<Connect4Game />} /> {/* <--- ADDED */}
           </Routes>
         </main>
 
@@ -122,7 +122,7 @@ function App() {
             height: '100%', 
             borderLeft: '1px solid #333', 
             flexShrink: 0,
-            background: '#121212' // Slightly different from body
+            background: '#121212' 
           }}>
              <SocialSidebar />
           </aside>

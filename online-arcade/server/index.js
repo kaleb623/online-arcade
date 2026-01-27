@@ -1,3 +1,4 @@
+// server/index.js
 const express = require('express');
 const cors = require('cors');
 const http = require('http'); 
@@ -45,7 +46,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// NEW: PROFILE CUSTOMIZATION ROUTE
 app.post('/api/user/update-profile', async (req, res) => {
     try {
         const { username, avatar, statusMessage } = req.body;
@@ -54,7 +54,6 @@ app.post('/api/user/update-profile', async (req, res) => {
             { avatar, statusMessage },
             { new: true }
         );
-        
         if (updatedUser) {
             res.json({ status: 'ok', avatar: updatedUser.avatar, statusMessage: updatedUser.statusMessage });
         } else {
@@ -96,9 +95,10 @@ app.get('/api/leaderboard/:game', async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Track online users
+// Track online users and game rooms
 const activeUsers = new Map(); 
 const checkersRooms = new Map();
+const connect4Rooms = new Map(); // <--- NEW: Separate rooms for Connect 4
 
 const generateRoomCode = () => Math.random().toString(36).substring(2, 6).toUpperCase();
 
@@ -113,17 +113,13 @@ io.on('connection', (socket) => {
             status: 'online',
             currentGame: null
         });
-        console.log(`👤 User Identified: ${username}`);
         
-        // 1. Send the FULL current list ONLY to the person who just logged in
         const usersList = Array.from(activeUsers.entries()).map(([name, data]) => ({
             username: name,
             status: data.status,
             game: data.currentGame
         }));
         socket.emit('initial_user_list', usersList);
-
-        // 2. Broadcast to EVERYONE ELSE that this user is now online
         socket.broadcast.emit('user_online', { username, status: 'online' }); 
     });
 
@@ -142,9 +138,14 @@ io.on('connection', (socket) => {
     });
 
     // SPECTATING RELAY
-    socket.on('join_spectator', (targetUsername) => {
+socket.on('join_spectator', (targetUsername) => {
         socket.join(`watch_${targetUsername}`);
-        console.log(`👁️  ${socket.username || 'Guest'} started watching ${targetUsername}`);
+        
+        // NEW: Notify the target that they are being watched so they can send a snapshot
+        const targetUser = activeUsers.get(targetUsername);
+        if (targetUser && targetUser.socketId) {
+            io.to(targetUser.socketId).emit('spectator_joined');
+        }
     });
 
     socket.on('stream_game_data', (data) => {
@@ -153,7 +154,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // CHECKERS GAME LOGIC
+    // --- CHECKERS LOGIC ---
     socket.on('create_room', () => {
         const roomCode = generateRoomCode();
         checkersRooms.set(roomCode, { players: [], names: {} });
@@ -195,21 +196,64 @@ io.on('connection', (socket) => {
         io.in(data.room).emit("game_over", { winner: data.winner });
     });
 
+    // --- CONNECT 4 LOGIC (NEW) ---
+    socket.on('create_c4_room', () => {
+        const roomCode = generateRoomCode();
+        connect4Rooms.set(roomCode, { players: [], names: {} });
+        socket.emit('c4_room_created', roomCode);
+    });
+
+    socket.on('join_c4_room', (data) => {
+        const { roomCode, username } = data;
+        const roomData = connect4Rooms.get(roomCode);
+        const socketRoom = io.sockets.adapter.rooms.get(roomCode);
+
+        if (roomData && (!socketRoom || socketRoom.size < 2)) {
+            socket.join(roomCode);
+            roomData.players.push(socket.id);
+            roomData.names[socket.id] = username;
+
+            if (roomData.players.length === 2) {
+                const p1Id = roomData.players[0];
+                const p2Id = roomData.players[1];
+                const names = { 1: roomData.names[p1Id], 2: roomData.names[p2Id] };
+                
+                // Player 1 = Red (1), Player 2 = Cyan (2)
+                io.to(p1Id).emit('c4_game_start', { myPlayerNum: 1, room: roomCode, names });
+                io.to(p2Id).emit('c4_game_start', { myPlayerNum: 2, room: roomCode, names });
+            }
+        } else {
+            socket.emit('error_joining', 'Room full or invalid');
+        }
+    });
+
+    socket.on('c4_make_move', (data) => {
+        // data: { room, col, player }
+        socket.to(data.room).emit('c4_opponent_move', data);
+    });
+
+    socket.on('c4_game_end', (data) => {
+        // data: { room, winner }
+        io.in(data.room).emit('c4_game_over', { winner: data.winner });
+    });
+
+    // --- DISCONNECT & CLEANUP ---
     socket.on('disconnect', () => {
         if (socket.username) {
             activeUsers.delete(socket.username);
             io.emit('user_offline', socket.username);
-            console.log(`📡 User Offline: ${socket.username}`);
         }
-        checkersRooms.forEach((data, code) => {
-            if (data.players.includes(socket.id)) checkersRooms.delete(code);
+        
+        // Clean empty rooms
+        [checkersRooms, connect4Rooms].forEach(rooms => {
+            rooms.forEach((data, code) => {
+                if (data.players.includes(socket.id)) rooms.delete(code);
+            });
         });
     });
 });
 
-// --- 5. STATIC FILES & CATCH-ALL ---
 app.use(express.static(path.join(__dirname, '../client/dist')));
-
 app.get(/(.*)/, (req, res) => {
     if(req.path.startsWith('/api')) return res.status(404);
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
