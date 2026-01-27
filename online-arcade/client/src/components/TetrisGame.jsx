@@ -1,8 +1,8 @@
 // client/src/components/TetrisGame.jsx
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { socket } from '../socket'; // Integrated shared socket
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { socket } from '../socket'; 
 
 // --- CONFIGURATION ---
 const COLS = 10;
@@ -101,8 +101,12 @@ function TetrisGame() {
   const canvasRef = useRef();
   const nextCanvasRef = useRef(); 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [gameStatus, setGameStatus] = useState('idle');
+  // "spectate" param tells us if we are watching someone
+  const spectatingTarget = searchParams.get('spectate');
+
+  const [gameStatus, setGameStatus] = useState(spectatingTarget ? 'spectating' : 'idle');
   const [score, setScore] = useState(0);
   const [countdown, setCountdown] = useState(3);
   const [isSfxMuted, setIsSfxMuted] = useState(() => localStorage.getItem('snake_sfx_muted') === 'true');
@@ -123,23 +127,79 @@ function TetrisGame() {
 
   const username = localStorage.getItem('user') || "Anonymous";
 
-  // --- NEW: SOCIAL ACTIVITY SYNC ---
+  // --- 1. SPECTATOR & SOCIAL LOGIC ---
   useEffect(() => {
-    if (gameStatus === 'playing' && !isGameOverRef.current) {
+    if (spectatingTarget) {
+      // MODE: WATCHING
+      socket.emit('join_spectator', spectatingTarget);
+      console.log(`Joined spectator room for: ${spectatingTarget}`);
+
+      socket.on('live_stream', (data) => {
+        // Hydrate local state from stream
+        gridRef.current = data.grid;
+        pieceRef.current = data.piece;
+        nextPieceRef.current = data.nextPiece;
+        
+        // Sync score only if it changed to avoid excessive re-renders
+        if(scoreRef.current !== data.score) {
+            scoreRef.current = data.score;
+            setScore(data.score);
+        }
+        
+        // If the player crashed, show Game Over on our screen too
+        if (data.status === 'gameover' && gameStatus !== 'gameover') {
+            setGameStatus('gameover');
+        } else if (data.status === 'playing' && gameStatus !== 'playing') {
+            setGameStatus('playing');
+        }
+
+        // Force a draw frame
+        draw();
+        drawNext();
+      });
+
+      // Update sidebar to show we are watching
+      socket.emit('update_activity', { status: 'watching', game: `Tetris (${spectatingTarget})` });
+
+      return () => {
+        socket.off('live_stream');
+        socket.emit('update_activity', { status: 'online', game: null });
+      };
+    } 
+    else {
+      // MODE: PLAYING
+      if (gameStatus === 'playing' && !isGameOverRef.current) {
         socket.emit('update_activity', { 
             status: 'gaming', 
             game: `Tetris (Score: ${score})` 
         });
+      }
     }
-  }, [score, gameStatus]);
+  }, [score, gameStatus, spectatingTarget]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       cancelAnimationFrame(requestRef.current);
-      // Clean up activity when leaving the page
-      socket.emit('update_activity', { status: 'online', game: null });
+      if(!spectatingTarget) {
+          socket.emit('update_activity', { status: 'online', game: null });
+      }
     };
   }, []);
+
+  // --- 2. BROADCAST HELPER ---
+  const broadcastState = () => {
+    // Only broadcast if we are the one playing
+    if (!spectatingTarget && !isGameOverRef.current) {
+        socket.emit('stream_game_data', {
+            grid: gridRef.current,
+            piece: pieceRef.current,
+            nextPiece: nextPieceRef.current,
+            score: scoreRef.current,
+            status: gameStatus
+        });
+    }
+  };
 
   // --- HELPERS ---
   const createPiece = () => {
@@ -202,6 +262,9 @@ function TetrisGame() {
 
   // --- GAME LOGIC ---
   const update = (time) => {
+      // IF SPECTATING, DO NOT RUN LOCAL PHYSICS LOOP
+      if (spectatingTarget) return;
+
       if (!lastTimeRef.current) lastTimeRef.current = time;
       const deltaTime = time - lastTimeRef.current;
       lastTimeRef.current = time;
@@ -252,6 +315,9 @@ function TetrisGame() {
           }
       }
       dropCounterRef.current = 0;
+      
+      // BROADCAST STATE AFTER DROP
+      broadcastState();
   };
 
   const playerMove = (dir) => {
@@ -262,6 +328,7 @@ function TetrisGame() {
           p.x -= dir; 
       } else {
           playSynth('move', isSfxMutedRef.current);
+          broadcastState(); // Broadcast after move
       }
   };
 
@@ -274,6 +341,7 @@ function TetrisGame() {
           p.shape = oldShape; 
       } else {
           playSynth('rotate', isSfxMutedRef.current);
+          broadcastState(); // Broadcast after rotate
       }
   };
 
@@ -285,6 +353,7 @@ function TetrisGame() {
        }
        p.y--; 
        dropCounterRef.current = dropIntervalRef.current + 1;
+       broadcastState(); // Broadcast after hard drop
   };
 
   // --- DRAWING ---
@@ -302,12 +371,16 @@ function TetrisGame() {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      gridRef.current.forEach((row, y) => {
-          row.forEach((color, x) => {
-              if (color) drawBlock(ctx, x, y, color);
+      // Draw Grid
+      if (gridRef.current) {
+          gridRef.current.forEach((row, y) => {
+              row.forEach((color, x) => {
+                  if (color) drawBlock(ctx, x, y, color);
+              });
           });
-      });
+      }
 
+      // Draw Active Piece
       if (pieceRef.current) {
           pieceRef.current.shape.forEach((row, y) => {
               row.forEach((value, x) => {
@@ -341,6 +414,9 @@ function TetrisGame() {
   // --- EVENTS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
+        // SPECTATORS CANNOT CONTROL
+        if (spectatingTarget) return;
+
         if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", "Space"].indexOf(e.code) > -1) e.preventDefault();
         
         if (gameStatus !== 'playing') return;
@@ -362,7 +438,7 @@ function TetrisGame() {
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [gameStatus]);
+  }, [gameStatus, spectatingTarget]);
 
   useEffect(() => { 
     isSfxMutedRef.current = isSfxMuted; 
@@ -370,6 +446,8 @@ function TetrisGame() {
   }, [isSfxMuted]);
   
   const startGame = () => {
+      if (spectatingTarget) return; // Spectators cannot start new games
+
       if (audioCtx.state === 'suspended') audioCtx.resume();
       setGameStatus('countdown');
       setCountdown(3);
@@ -384,15 +462,17 @@ function TetrisGame() {
       isGameOverRef.current = false;
       draw();
       drawNext();
+      
+      broadcastState();
   };
   
   const endGame = () => {
       setGameStatus('gameover');
-      // Update activity to online upon game over
       socket.emit('update_activity', { status: 'online', game: null });
-      if(username !== "Anonymous") {
+      if(username !== "Anonymous" && !spectatingTarget) {
           axios.post('/api/score', { username, game: 'tetris', score: scoreRef.current }).catch(console.error);
       }
+      broadcastState();
   };
 
   useEffect(() => {
@@ -422,20 +502,35 @@ function TetrisGame() {
           <div style={{ position: 'relative', border: '10px solid #111', borderRadius: '4px' }}>
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} style={{ display: 'block', backgroundColor: '#000' }} />
             
-            {gameStatus === 'idle' && (
+            {/* IDLE STATE */}
+            {gameStatus === 'idle' && !spectatingTarget && (
               <div style={overlayStyle}><button onClick={startGame} style={buttonStyle}>INSERT COIN (START)</button></div>
             )}
+
+            {/* SPECTATING WAITING STATE */}
+            {gameStatus === 'spectating' && score === 0 && (
+                 <div style={{...overlayStyle, backgroundColor: 'transparent', pointerEvents: 'none'}}>
+                    <p style={{ color: '#fff', textShadow: '0 0 5px #000' }}>WAITING FOR SIGNAL...</p>
+                 </div>
+            )}
+
             {gameStatus === 'countdown' && (
               <div style={overlayStyle}><div style={countdownStyle}>{countdown}</div><p style={{ color: '#fff', fontSize: '1.5rem' }}>GET READY</p></div>
             )}
+            
             {gameStatus === 'gameover' && (
               <div style={overlayStyle}>
                 <h3 style={{ color: '#ff7675', fontSize: '3rem', margin: 0 }}>GAME OVER</h3>
                 <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
-                <div>
-                  <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                  <button onClick={() => navigate('/leaderboard/tetris')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
-                </div>
+                
+                {!spectatingTarget ? (
+                    <div>
+                    <button onClick={startGame} style={buttonStyle}>RETRY</button>
+                    <button onClick={() => navigate('/leaderboard/tetris')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                    </div>
+                ) : (
+                    <div style={{ color: '#ccc', marginTop: '20px' }}>STREAM ENDED</div>
+                )}
               </div>
             )}
           </div>
@@ -449,7 +544,10 @@ function TetrisGame() {
           </div>
 
           <div style={{ backgroundColor: '#2d3436', padding: '15px', borderRadius: '10px', border: '4px solid #636e72', color: '#fff' }}>
-             <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '5px' }}>SCORE</div>
+             <div style={{ color: '#b2bec3', fontSize: '0.8rem', marginBottom: '5px' }}>
+                 {spectatingTarget ? `WATCHING` : `SCORE`}
+             </div>
+             {spectatingTarget && <div style={{ fontSize: '0.9rem', color: '#00d2d3', marginBottom: '5px' }}>{spectatingTarget}</div>}
              <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{String(score).padStart(5, '0')}</div>
           </div>
 
@@ -465,7 +563,7 @@ function TetrisGame() {
           </div>
           
           <div style={{ color: '#636e72', fontSize: '0.7rem', textAlign: 'center', marginTop: '10px' }}>
-            ↑ OR 'R' TO ROTATE<br/>HOLD ↓ FOR SPEED<br/>SPACE TO DROP
+            {spectatingTarget ? "LIVE FEED - NO INPUT" : "↑ OR 'R' TO ROTATE\nHOLD ↓ FOR SPEED\nSPACE TO DROP"}
           </div>
         </div>
       </div>

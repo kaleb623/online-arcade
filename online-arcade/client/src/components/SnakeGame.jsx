@@ -2,8 +2,8 @@
 import useGameSounds from '../hooks/useGameSounds';
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { socket } from '../socket'; // Integrated shared socket
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { socket } from '../socket'; 
 
 // --- CONFIGURATION ---
 const CANVAS_SIZE = 800; 
@@ -23,7 +23,6 @@ const MUSIC_STAGES = [
   { limit: 99999, track: '/music/SnakeGame/stage6.mp3' } 
 ];
 
-// --- 🔴 STAGE GLOW COLORS ---
 const STAGE_COLORS = [
   'rgba(0, 210, 211, 0.6)', 
   'rgba(255, 159, 67, 0.7)', 
@@ -90,9 +89,12 @@ function SnakeGame() {
   const canvasRef = useRef();
   const gameContainerRef = useRef(null); 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { playSound } = useGameSounds('SnakeGame');
 
-  const [gameStatus, setGameStatus] = useState('idle');
+  const spectatingTarget = searchParams.get('spectate');
+
+  const [gameStatus, setGameStatus] = useState(spectatingTarget ? 'spectating' : 'idle');
   const [score, setScore] = useState(0);
   const [countdown, setCountdown] = useState(5);
   
@@ -124,17 +126,40 @@ function SnakeGame() {
   const currentStageIndex = getStageIndex(score);
   const currentGlowColor = STAGE_COLORS[currentStageIndex];
 
-  // --- NEW: SOCIAL ACTIVITY SYNC ---
+  // --- SOCIAL & SPECTATOR SYNC ---
   useEffect(() => {
-    if (gameStatus === 'playing' && !isGameOverRef.current) {
-        // Emit score updates to the social sidebar
+    if (spectatingTarget) {
+        socket.emit('join_spectator', spectatingTarget);
+        console.log(`Joined spectator room for: ${spectatingTarget}`);
+
+        socket.on('live_stream', (data) => {
+            snakeRef.current = data.snake;
+            foodRef.current = data.food;
+            scoreRef.current = data.score;
+            foodEmojiRef.current = data.emoji;
+            
+            // FIX: Update the direction so the head rotates correctly
+            if (data.dir) currentDir.current = data.dir; 
+            
+            setScore(data.score);
+            draw(1);
+        });
+
+        socket.emit('update_activity', { status: 'watching', game: `Snake (${spectatingTarget})` });
+
+        return () => {
+            socket.off('live_stream');
+            socket.emit('update_activity', { status: 'online', game: null });
+        };
+    } else if (gameStatus === 'playing' && !isGameOverRef.current) {
         socket.emit('update_activity', { 
             status: 'gaming', 
             game: `Snake (Score: ${score})` 
         });
     }
-  }, [score, gameStatus]);
+  }, [score, gameStatus, spectatingTarget]);
 
+  // --- STANDARD GAME LOGIC ---
   useEffect(() => {
     if (gameContainerRef.current) {
         setTimeout(() => {
@@ -152,7 +177,7 @@ function SnakeGame() {
     localStorage.setItem('snake_music_muted', isMusicMuted);
     if (musicRef.current) {
         musicRef.current.muted = isMusicMuted;
-        if (!isMusicMuted && gameStatus === 'playing') {
+        if (!isMusicMuted && (gameStatus === 'playing' || gameStatus === 'spectating')) {
              if(musicRef.current.volume === 0) musicRef.current.volume = BASE_VOLUME;
              musicRef.current.play().catch(e => console.log("Audio play blocked:", e));
         }
@@ -166,7 +191,6 @@ function SnakeGame() {
         musicRef.current.currentTime = 0; 
       }
       if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
-      // Reset activity on exit
       socket.emit('update_activity', { status: 'online', game: null });
     };
   }, []);
@@ -189,7 +213,7 @@ function SnakeGame() {
   };
 
   useEffect(() => {
-    if (gameStatus !== 'playing') {
+    if (gameStatus !== 'playing' && gameStatus !== 'spectating') {
         musicRef.current.pause();
         return;
     }
@@ -280,12 +304,15 @@ function SnakeGame() {
       if (i === 0) {
         context.save();
         context.translate(x + 0.5, y + 0.5);
+        
+        // --- ROTATION FIX ---
         const dir = currentDir.current;
         let angle = 0;
         if (dir[1] === 1) angle = 0;              
         if (dir[1] === -1) angle = Math.PI;      
         if (dir[0] === 1) angle = -Math.PI / 2;  
         if (dir[0] === -1) angle = Math.PI / 2;  
+        
         context.rotate(angle);
         context.font = "1.2px Arial"; 
         context.fillText("👅", 0, 0.1); 
@@ -297,6 +324,8 @@ function SnakeGame() {
   };
 
   const runGameStep = () => {
+    if (spectatingTarget) return; 
+
     if (isGameOverRef.current) return;
     if (pooDropRef.current > 0) pooDropRef.current -= 1;
     
@@ -352,29 +381,42 @@ function SnakeGame() {
         currentSnake.pop();
     }
     snakeRef.current = currentSnake;
+
+    // --- EMIT GAME DATA FOR SPECTATORS ---
+    socket.emit('stream_game_data', {
+        snake: snakeRef.current,
+        food: foodRef.current,
+        score: scoreRef.current,
+        emoji: foodEmojiRef.current,
+        dir: currentDir.current // <--- FIX: SENDING DIRECTION NOW
+    });
   };
 
+  // ... (Rest of the file remains exactly the same as before)
+  
   const gameLoopRefWrapper = (time) => {
-      if (gameStatus !== 'playing' || isGameOverRef.current) return;
+      if ((gameStatus !== 'playing' && gameStatus !== 'spectating') || isGameOverRef.current) return;
+      
       if (!lastTimeRef.current) lastTimeRef.current = time;
       let deltaTime = time - lastTimeRef.current;
       lastTimeRef.current = time;
       if (deltaTime > 250) deltaTime = 250; 
       accumulatorRef.current += deltaTime;
+      
       while (accumulatorRef.current >= TICK_RATE) {
           if (moveQueue.current.length > 0) currentDir.current = moveQueue.current.shift();
-          runGameStep();
+          runGameStep(); 
           if (isGameOverRef.current) break;
           accumulatorRef.current -= TICK_RATE;
       }
-      if(gameStatus === 'playing' && !isGameOverRef.current) {
+      if((gameStatus === 'playing' || gameStatus === 'spectating') && !isGameOverRef.current) {
           draw(accumulatorRef.current / TICK_RATE);
           requestRef.current = requestAnimationFrame(gameLoopRefWrapper);
       }
   };
 
   useEffect(() => {
-    if (gameStatus === 'playing') {
+    if (gameStatus === 'playing' || gameStatus === 'spectating') {
         requestRef.current = requestAnimationFrame((time) => {
             lastTimeRef.current = time;
             requestRef.current = requestAnimationFrame(gameLoopRefWrapper);
@@ -396,6 +438,8 @@ function SnakeGame() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (spectatingTarget) return;
+
       const lastMove = moveQueue.current.length > 0 ? moveQueue.current[moveQueue.current.length - 1] : currentDir.current;
       let newDir = null;
       if (e.key === "ArrowUp" && lastMove[1] !== 1) newDir = [0, -1];
@@ -407,9 +451,10 @@ function SnakeGame() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [spectatingTarget]);
 
   const startGame = () => {
+    if (spectatingTarget) return; 
     setGameStatus('countdown');
     setCountdown(5);
     const startFood = [Math.floor(Math.random() * (CANVAS_SIZE / SCALE)), Math.floor(Math.random() * (CANVAS_SIZE / SCALE))];
@@ -435,7 +480,7 @@ function SnakeGame() {
 
   const endGame = () => {
     setGameStatus('gameover');
-    if(username !== "Anonymous") {
+    if(username !== "Anonymous" && !spectatingTarget) {
         axios.post('/api/score', { username, game: 'snake', score: scoreRef.current })
             .catch(err => console.error(err));
     }
@@ -486,7 +531,9 @@ function SnakeGame() {
               <span style={{ color: '#00d2d3' }}>G</span>
           </div>
           
-          <div style={{ fontSize: '1.5rem' }}>SCORE: {String(score).padStart(4, '0')}</div>
+          <div style={{ fontSize: '1.5rem' }}>
+            {spectatingTarget ? `WATCHING: ${spectatingTarget.toUpperCase()}` : `SCORE: ${String(score).padStart(4, '0')}`}
+          </div>
           
           <div style={{ display: 'flex', gap: '10px', marginLeft: '15px' }}>
               <button onClick={() => setIsMusicMuted(!isMusicMuted)} style={iconButtonStyle}>
@@ -500,11 +547,19 @@ function SnakeGame() {
         </div>
         <div style={{ position: 'relative', border: '10px solid #111', borderRadius: '4px' }}>
           <canvas ref={canvasRef} width={`${CANVAS_SIZE}px`} height={`${CANVAS_SIZE}px`} style={{ display: 'block', backgroundColor: '#000' }} />
-          {gameStatus === 'idle' && (
+          
+          {gameStatus === 'idle' && !spectatingTarget && (
             <div style={overlayStyle}>
               <button onClick={startGame} style={buttonStyle}>INSERT COIN (START)</button>
             </div>
           )}
+          
+          {gameStatus === 'spectating' && score === 0 && (
+             <div style={{...overlayStyle, backgroundColor: 'transparent', pointerEvents: 'none'}}>
+                <p style={{ color: '#fff', textShadow: '0 0 5px #000' }}>WAITING FOR SIGNAL...</p>
+             </div>
+          )}
+
           {gameStatus === 'countdown' && (
             <div style={overlayStyle}>
               <div style={countdownStyle}>{countdown}</div>
@@ -515,15 +570,22 @@ function SnakeGame() {
             <div style={overlayStyle}>
               <h3 style={{ color: '#ff7675', fontSize: '3rem', margin: 0, textShadow: '4px 4px 0 #000' }}>GAME OVER</h3>
               <p style={{ color: '#fff', fontSize: '1.5rem', margin: '20px 0' }}>SCORE: {score}</p>
-              <div>
-                <button onClick={startGame} style={buttonStyle}>RETRY</button>
-                <button onClick={() => navigate('/leaderboard/snake')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
-              </div>
+              {!spectatingTarget && (
+                  <div>
+                    <button onClick={startGame} style={buttonStyle}>RETRY</button>
+                    <button onClick={() => navigate('/leaderboard/snake')} style={{ ...buttonStyle, background: '#636e72', marginLeft: '10px' }}>LEADERS</button>
+                  </div>
+              )}
+              {spectatingTarget && (
+                  <div style={{ color: '#ccc', marginTop: '20px' }}>
+                      STREAM ENDED
+                  </div>
+              )}
             </div>
           )}
         </div>
         <div style={{ textAlign: 'center', color: '#b2bec3', marginTop: '10px', fontSize: '0.8rem' }}>
-          USE ARROW KEYS TO MOVE
+          {spectatingTarget ? "LIVE FEED - CONTROLS DISABLED" : "USE ARROW KEYS TO MOVE"}
         </div>
       </div>
     </div>

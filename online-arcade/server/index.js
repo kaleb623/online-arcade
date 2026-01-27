@@ -195,7 +195,6 @@ io.on('connection', (socket) => {
         io.in(data.room).emit("game_over", { winner: data.winner });
     });
 
-    // DISCONNECT & CLEANUP
     socket.on('disconnect', () => {
         if (socket.username) {
             activeUsers.delete(socket.username);
