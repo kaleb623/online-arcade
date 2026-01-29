@@ -2,6 +2,8 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http'); 
+const https = require('https'); // <--- ADDED
+const fs = require('fs');       // <--- ADDED
 const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
 const path = require('path'); 
@@ -82,6 +84,7 @@ app.post('/api/score', async (req, res) => {
     }
 });
 
+// --- UPDATED LEADERBOARD (Aggregation Pipeline) ---
 app.get('/api/leaderboard/:game', async (req, res) => {
     try {
         const { game } = req.params;
@@ -93,12 +96,12 @@ app.get('/api/leaderboard/:game', async (req, res) => {
             // 2. Sort by score descending (so the first one we group is the highest)
             { $sort: { score: -1 } },
             
-            // 3. Group by username, taking the first score found (which is the highest due to sort)
+            // 3. Group by username, taking the first score found
             {
                 $group: {
-                    _id: "$username", // Group by username
-                    score: { $first: "$score" }, // Keep highest score
-                    date: { $first: "$createdAt" } // Keep date of highest score
+                    _id: "$username", 
+                    score: { $first: "$score" }, 
+                    date: { $first: "$createdAt" } 
                 }
             },
             
@@ -108,11 +111,11 @@ app.get('/api/leaderboard/:game', async (req, res) => {
             // 5. Take top 10
             { $limit: 10 },
             
-            // 6. Project to match your frontend structure
+            // 6. Project to match frontend structure
             {
                 $project: {
-                    _id: 0, // Hide the group ID
-                    username: "$_id", // Rename _id back to username
+                    _id: 0, 
+                    username: "$_id", 
                     score: 1,
                     createdAt: "$date"
                 }
@@ -126,14 +129,39 @@ app.get('/api/leaderboard/:game', async (req, res) => {
     }
 });
 
-// --- 4. MULTIPLAYER & SOCIAL SOCKETS ---
-const server = http.createServer(app);
+// --- 4. SSL & SERVER CONFIGURATION ---
+let server;
+try {
+  // Try to load the "greysgamehouse.lol" certificates
+  // If these files don't exist (local dev), it throws an error and jumps to catch block
+  const privateKey = fs.readFileSync('/etc/letsencrypt/live/greysgamehouse.lol/privkey.pem', 'utf8');
+  const certificate = fs.readFileSync('/etc/letsencrypt/live/greysgamehouse.lol/fullchain.pem', 'utf8');
+  const credentials = { key: privateKey, cert: certificate };
+
+  // Create Secure Server
+  server = https.createServer(credentials, app);
+  console.log("🔒 SSL Certificates loaded. Running in HTTPS mode.");
+  
+  // Create a separate HTTP server just to redirect to HTTPS
+  const httpApp = express();
+  httpApp.get('*', (req, res) => {
+    res.redirect('https://' + req.headers.host + req.url);
+  });
+  httpApp.listen(80); // Listen on insecure port 80
+
+} catch (err) {
+  // Local Development Fallback
+  console.log("⚠️ No SSL certs found (or local dev). Falling back to HTTP.");
+  server = http.createServer(app);
+}
+
+// --- 5. SOCKET.IO SETUP ---
 const io = new Server(server, { cors: { origin: "*" } });
 
 // Track online users and game rooms
 const activeUsers = new Map(); 
 const checkersRooms = new Map();
-const connect4Rooms = new Map(); // <--- NEW: Separate rooms for Connect 4
+const connect4Rooms = new Map(); 
 
 const generateRoomCode = () => Math.random().toString(36).substring(2, 6).toUpperCase();
 
@@ -173,10 +201,10 @@ io.on('connection', (socket) => {
     });
 
     // SPECTATING RELAY
-socket.on('join_spectator', (targetUsername) => {
+    socket.on('join_spectator', (targetUsername) => {
         socket.join(`watch_${targetUsername}`);
         
-        // NEW: Notify the target that they are being watched so they can send a snapshot
+        // Notify target so they can send a snapshot
         const targetUser = activeUsers.get(targetUsername);
         if (targetUser && targetUser.socketId) {
             io.to(targetUser.socketId).emit('spectator_joined');
@@ -231,7 +259,7 @@ socket.on('join_spectator', (targetUsername) => {
         io.in(data.room).emit("game_over", { winner: data.winner });
     });
 
-    // --- CONNECT 4 LOGIC (NEW) ---
+    // --- CONNECT 4 LOGIC ---
     socket.on('create_c4_room', () => {
         const roomCode = generateRoomCode();
         connect4Rooms.set(roomCode, { players: [], names: {} });
@@ -253,7 +281,6 @@ socket.on('join_spectator', (targetUsername) => {
                 const p2Id = roomData.players[1];
                 const names = { 1: roomData.names[p1Id], 2: roomData.names[p2Id] };
                 
-                // Player 1 = Red (1), Player 2 = Cyan (2)
                 io.to(p1Id).emit('c4_game_start', { myPlayerNum: 1, room: roomCode, names });
                 io.to(p2Id).emit('c4_game_start', { myPlayerNum: 2, room: roomCode, names });
             }
@@ -263,12 +290,10 @@ socket.on('join_spectator', (targetUsername) => {
     });
 
     socket.on('c4_make_move', (data) => {
-        // data: { room, col, player }
         socket.to(data.room).emit('c4_opponent_move', data);
     });
 
     socket.on('c4_game_end', (data) => {
-        // data: { room, winner }
         io.in(data.room).emit('c4_game_over', { winner: data.winner });
     });
 
@@ -279,7 +304,6 @@ socket.on('join_spectator', (targetUsername) => {
             io.emit('user_offline', socket.username);
         }
         
-        // Clean empty rooms
         [checkersRooms, connect4Rooms].forEach(rooms => {
             rooms.forEach((data, code) => {
                 if (data.players.includes(socket.id)) rooms.delete(code);
@@ -294,7 +318,11 @@ app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+// Use 443 if SSL is active, otherwise use 5000 (dev)
+const PORT = process.env.PORT || 443; 
+// If SSL failed (server is http), we might want to default back to 5000 for local dev
+const FINAL_PORT = server instanceof https.Server ? 443 : 5000;
+
+server.listen(FINAL_PORT, () => {
+    console.log(`🚀 Server running on port ${FINAL_PORT}`);
 });
