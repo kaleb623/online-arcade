@@ -130,11 +130,11 @@ try {
   console.log("🔒 SSL Certificates loaded. Running in HTTPS mode.");
   
   // Create a separate HTTP server just to redirect to HTTPS
-  const httpApp = express();
-  httpApp.get('*', (req, res) => {
-    res.redirect('https://' + req.headers.host + req.url);
-  });
-  httpApp.listen(80); 
+ // const httpApp = express();
+ // httpApp.get('*', (req, res) => {
+ //   res.redirect('https://' + req.headers.host + req.url);
+ // });
+//  httpApp.listen(80); 
 
 } catch (err) {
   // --- DIAGNOSTIC LOGGING ---
