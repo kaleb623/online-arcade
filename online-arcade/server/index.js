@@ -2,8 +2,8 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http'); 
-const https = require('https'); // <--- ADDED
-const fs = require('fs');       // <--- ADDED
+const https = require('https'); 
+const fs = require('fs');       
 const { Server } = require('socket.io'); 
 const mongoose = require('mongoose');
 const path = require('path'); 
@@ -84,19 +84,13 @@ app.post('/api/score', async (req, res) => {
     }
 });
 
-// --- UPDATED LEADERBOARD (Aggregation Pipeline) ---
 app.get('/api/leaderboard/:game', async (req, res) => {
     try {
         const { game } = req.params;
 
         const scores = await Score.aggregate([
-            // 1. Filter by the specific game
             { $match: { game: game } },
-            
-            // 2. Sort by score descending (so the first one we group is the highest)
             { $sort: { score: -1 } },
-            
-            // 3. Group by username, taking the first score found
             {
                 $group: {
                     _id: "$username", 
@@ -104,14 +98,8 @@ app.get('/api/leaderboard/:game', async (req, res) => {
                     date: { $first: "$createdAt" } 
                 }
             },
-            
-            // 4. Sort the grouped results by score descending
             { $sort: { score: -1 } },
-            
-            // 5. Take top 10
             { $limit: 10 },
-            
-            // 6. Project to match frontend structure
             {
                 $project: {
                     _id: 0, 
@@ -133,7 +121,6 @@ app.get('/api/leaderboard/:game', async (req, res) => {
 let server;
 try {
   // Try to load the "greysgamehouse.lol" certificates
-  // If these files don't exist (local dev), it throws an error and jumps to catch block
   const privateKey = fs.readFileSync('/etc/letsencrypt/live/greysgamehouse.lol/privkey.pem', 'utf8');
   const certificate = fs.readFileSync('/etc/letsencrypt/live/greysgamehouse.lol/fullchain.pem', 'utf8');
   const credentials = { key: privateKey, cert: certificate };
@@ -147,18 +134,21 @@ try {
   httpApp.get('*', (req, res) => {
     res.redirect('https://' + req.headers.host + req.url);
   });
-  httpApp.listen(80); // Listen on insecure port 80
+  httpApp.listen(80); 
 
 } catch (err) {
-  // Local Development Fallback
-  console.log("⚠️ No SSL certs found (or local dev). Falling back to HTTP.");
+  // --- DIAGNOSTIC LOGGING ---
+  console.error("❌ CRITICAL SSL ERROR:", err.message);
+  console.error(err); 
+  // -------------------------
+
+  console.log("⚠️ Falling back to HTTP (Dev Mode or SSL Failed).");
   server = http.createServer(app);
 }
 
 // --- 5. SOCKET.IO SETUP ---
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Track online users and game rooms
 const activeUsers = new Map(); 
 const checkersRooms = new Map();
 const connect4Rooms = new Map(); 
@@ -200,11 +190,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // SPECTATING RELAY
+    // SPECTATING
     socket.on('join_spectator', (targetUsername) => {
         socket.join(`watch_${targetUsername}`);
-        
-        // Notify target so they can send a snapshot
         const targetUser = activeUsers.get(targetUsername);
         if (targetUser && targetUser.socketId) {
             io.to(targetUser.socketId).emit('spectator_joined');
@@ -217,7 +205,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- CHECKERS LOGIC ---
+    // CHECKERS
     socket.on('create_room', () => {
         const roomCode = generateRoomCode();
         checkersRooms.set(roomCode, { players: [], names: {} });
@@ -259,7 +247,7 @@ io.on('connection', (socket) => {
         io.in(data.room).emit("game_over", { winner: data.winner });
     });
 
-    // --- CONNECT 4 LOGIC ---
+    // CONNECT 4
     socket.on('create_c4_room', () => {
         const roomCode = generateRoomCode();
         connect4Rooms.set(roomCode, { players: [], names: {} });
@@ -297,7 +285,6 @@ io.on('connection', (socket) => {
         io.in(data.room).emit('c4_game_over', { winner: data.winner });
     });
 
-    // --- DISCONNECT & CLEANUP ---
     socket.on('disconnect', () => {
         if (socket.username) {
             activeUsers.delete(socket.username);
@@ -319,8 +306,7 @@ app.get(/(.*)/, (req, res) => {
 });
 
 // Use 443 if SSL is active, otherwise use 5000 (dev)
-const PORT = process.env.PORT || 443; 
-// If SSL failed (server is http), we might want to default back to 5000 for local dev
+// If SSL failed (server is http instance), default back to 5000
 const FINAL_PORT = server instanceof https.Server ? 443 : 5000;
 
 server.listen(FINAL_PORT, () => {
